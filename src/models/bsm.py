@@ -1,6 +1,7 @@
 """Black Scholes pricing and Greeks. Internal implementation is the source
 of truth for the report; tests cross check against py_vollib to 6 decimals."""
 from math import exp, log, sqrt
+
 from scipy.stats import norm
 
 

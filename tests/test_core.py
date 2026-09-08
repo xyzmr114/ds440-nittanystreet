@@ -77,6 +77,7 @@ def test_index_move_arithmetic():
 
 def test_twap_sums_to_order():
     import numpy as np
+
     from src.models.scheduler import twap_schedule
 
     slices = twap_schedule(order_size=1000.0, horizon=1.0, n_slices=10)
@@ -86,6 +87,7 @@ def test_twap_sums_to_order():
 
 def test_vwap_follows_curve():
     import numpy as np
+
     from src.models.scheduler import vwap_schedule
 
     curve = np.array([1, 2, 4, 8, 4, 2, 1], dtype=float)  # U shape
