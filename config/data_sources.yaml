@@ -1,0 +1,43 @@
+# Vendor map for data acquisition. API keys go in a gitignored .env file.
+# Priority order matters: first working source wins, fallbacks below.
+
+equities_bars:
+  primary:
+    vendor: databento
+    dataset: DBEQ
+    granularity: 1m
+    env_key: DATABENTO_API_KEY
+  fallbacks:
+    - vendor: tiingo
+      env_key: TIINGO_API_KEY
+    - vendor: polygon
+      env_key: POLYGON_API_KEY
+
+index_bars:
+  primary:
+    vendor: databento
+    dataset: DBEQ
+    granularity: 1m
+
+order_book_depth:
+  primary:
+    vendor: lobster
+    granularity: tick
+    sampled_days: 15
+  fallback:
+    vendor: databento
+    dataset: MBO
+
+options:
+  primary:
+    vendor: orats
+    granularity: daily
+    env_key: ORATS_API_KEY
+  fallbacks:
+    - vendor: cboe_datashop
+    - vendor: databento
+      dataset: OPRA
+
+constituent_weights:
+  xlf: https://www.sectorspdrs.com/products/XLF (holdings download)
+  banknifty: https://www.niftyindices.com (published weights)

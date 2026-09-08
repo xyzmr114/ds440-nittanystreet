@@ -1,0 +1,5 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Sprint questions
+    url: https://github.com/xyzmr114/ds440-nittanystreet/discussions
+    about: Team coordination goes in Discussions or the Kanban board, not issues.
