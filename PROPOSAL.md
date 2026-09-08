@@ -1,51 +1,57 @@
 # DS 440 Capstone Project Proposal
 
-## Agent Compromise: Benchmarking and Defending the Trust Boundary of Tool-Using AI Agents
+## TaintBox: A Taint-Tracked Sandbox Runtime and Agent-Computer Interface for AI Agents
 
 **Capstone Group:** (2) Nittany Street
 **Course:** DS 440, Data Sciences Capstone
 **Instructor:** Dr. Robert Thomson (rht5162@psu.edu)
-**Deliverable type:** Business grade technical report, quantitative prototype, and benchmark release
+**Deliverable type:** Business grade technical report, working sandbox runtime, and two research papers
 
-> This proposal supersedes the earlier Cross Asset TCA proposal following
-> instructor feedback on novelty. The repository's TCA scaffolding remains
-> as the fallback path.
+> This proposal supersedes both the earlier Cross Asset TCA proposal and
+> the benchmark-only security draft, per instructor feedback on novelty
+> and team direction. The TCA scaffolding remains in the repository as
+> historical work.
 
 ---
 
 ## 1. Executive Summary
 
-AI agents now hold real power: they read inboxes, send email, move files,
-execute code, and touch payment and customer systems. Every one of those
-powers is reachable through untrusted content. A malicious email is no
-longer just a phishing attempt against a human. It is an instruction
-targeting the agent itself. Microsoft 365 Copilot reading a crafted email
-is a documented attack vector. Government agencies and banks worldwide
-are scrambling to write agent security policy faster than the attackers
-write payloads.
+The agent-computer interface is the biggest capability lever in AI today.
+The same model on a raw shell performs at one level, and on a
+purpose-built execution harness performs at an entirely different one.
+SWE-agent, ExploitBench, and BabyRun all demonstrate the same effect.
+Meanwhile every agent deployment carries the same unresolved security
+problem: untrusted content (emails, web pages, tool outputs) flows into
+the model with no provenance, and prompt injection turns the agent's own
+tools into the attacker's tools.
 
-Yet nobody can answer the basic question: **when an agent with tools reads
-untrusted content, how often does the attacker win, and which defenses
-actually change that number?**
+This project builds **TaintBox**, a sandbox execution API for AI agents
+with three primitives nobody ships today:
 
-This project answers it. We build:
+1. **Snapshot and rewind.** The agent can time-travel its execution:
+   run, observe, branch, rewind to any state. Structured typed tools
+   replace the raw shell so the model stops burning context navigating a
+   terminal.
+2. **Taint-tracked I/O.** Every byte entering the box carries provenance.
+   Taint metadata travels with the data, and policy fires at the tool
+   boundary: tainted data cannot trigger privileged operations.
+3. **Telemetry by construction.** Every execution is also an attack
+   event stream, because the box sees what the agent reads, where it
+   came from, and what it tries to do with it.
 
-1. **A benchmark harness** that puts a tool-using agent (email access,
-   file access, web fetch, code execution) in front of a synthetic inbox
-   and measures whether injected instructions succeed.
-2. **A measurement study** of attack success rates across a defense
-   matrix: no defenses, prompt hardening, guardrail libraries, trained
-   detectors, least privilege tooling, and sandboxed execution.
-3. **A trained injection detector**: a compact classifier that flags
-   malicious instructions inside email bodies and tool outputs, evaluated
-   on held out attack families it has never seen.
-4. **An open release**: dataset, harness, and results, published so other
-   teams can run their own agents against it.
+The deliverable is the runtime itself, an API and SDK shaped like the
+sandbox companies developers already use, plus two papers:
 
-The stretch goal is a reference "agent gateway" configuration: the
-strongest defense stack from the measurement study, packaged as a drop-in
-trust boundary that wraps an existing agent, with before and after
-compromise rates.
+- **Paper 1 (capability):** measure model performance across harness
+  designs. Raw shell versus structured tools versus snapshot-rewind.
+  The ACI matters more than the model tier.
+- **Paper 2 (defense):** measure injection success with and without
+  taint-tracked boundaries. Does provenance surfaced to the model plus
+  boundary policy cut compromise rates in a way prompt hardening cannot?
+
+This is the sandbox company playbook plus a research program on
+something we invent. Not a benchmark for its own sake. Not a classifier
+bolted on top. The runtime is the product, the papers are the proof.
 
 ---
 
@@ -53,260 +59,288 @@ compromise rates.
 
 ### 2.1 What are we trying to do?
 
-Measure, in a controlled and reproducible way, how easily attacker
-instructions embedded in untrusted content compromise tool-using AI
-agents, and which defense layers reduce that risk most per unit cost.
-
-Concretely: an agent sits at a desk. Its job is reading and acting on
-email. The attacker sends email. The attacker's goal is exfiltration
-(making the agent forward private inbox contents), action on objectives
-(making the agent send fraudulent messages as the user), or code
-execution (making the agent run attacker supplied code). We measure how
-often each goal succeeds under each defense configuration.
+Build a sandbox execution runtime for AI agents that makes agents
+measurably more capable (better harness) and measurably safer (taint
+tracked boundaries), and prove both claims with controlled experiments.
 
 ### 2.2 How is it done today, and what is missing?
 
-Defense pieces exist: guardrail libraries (NVIDIA NeMo Guardrails,
-Guardrails AI), commercial injection filters (Lakera, PromptArmor),
-sandbox providers (E2B, Daytona, gVisor), and model level safety
-training. Academic benchmarks exist (Tensor Trust, HackAPrompt,
-CyberSecEval) but they evaluate **models**, not **tool-using agents with
-real side effects**.
+Sandbox companies (E2B, Daytona, gVisor based infra) sell execution
+isolation: can the agent's code hurt the host. Their protection starts
+the moment code executes, and their boxes are dumb Linux environments
+with file and process APIs.
 
-**Limitation 1: no end to end measurement.** No public benchmark runs the
-full loop: untrusted email, agent with tools, attacker goal, success
-verdict. The compromise rate of a production shaped agent is simply
-unknown.
+**Limitation 1: isolation is the wrong boundary for the biggest threat.**
+The Copilot inbox attack executes no code. The agent reads a malicious
+email and forwards the inbox. A sandbox changes nothing about that.
+Sandboxes protect the host, not the data, not the user.
 
-**Limitation 2: no defense science.** Nobody has measured the marginal
-value of each defense layer on the same workload. Security teams choose
-defenses by vendor slide, not by measured deltas.
+**Limitation 2: the harness is treated as plumbing.** Commercial
+sandboxes give agents a shell and call it done. Research (SWE-agent,
+ExploitBench, BabyRun) shows the agent-computer interface is one of the
+largest capability levers available. Nobody productizes that insight.
 
-**Limitation 3: no open attacker model story.** Frontier labs ship safety
-gates that refuse offensive security work. Red teams, including major
-research groups, have turned to self hosted open-weight models to build
-attack corpora. The defense community needs a public, reproducible attack
-generation pipeline.
+**Limitation 3: no provenance.** Agent runtimes do not track where a
+byte of content came from. Classic security solved this decades ago with
+taint analysis. Perl shipped taint mode in the 1990s. No agent runtime
+carries taint across the trust boundary today.
 
 ### 2.3 What is new in our approach?
 
-1. **End to end agent compromise benchmark** with a real tool surface,
-   not a chat playground.
-2. **Full factorial defense matrix** producing the first measured
-   marginal-value curve for each defense layer.
-3. **Out of distribution detector evaluation**: the detector is scored
-   only on attack families excluded from its training set. No benchmark
-   gaming.
-4. **Open release** of dataset, harness, and results.
+1. **A productized ACI.** Structured typed tools, observation channels,
+   and snapshot-rewind as first class primitives of the sandbox runtime,
+   with the capability gains measured and published.
+2. **Taint-tracked execution.** Provenance metadata on every read,
+   write, and tool invocation, with policy enforcement at the boundary
+   where tainted data meets privileged action.
+3. **The runtime as research instrument.** Because the box observes
+   everything, capability and safety experiments run on the same system
+   with full instrumentation, no separate harness needed.
 
 ### 2.4 Who cares?
 
-Security teams deploying agents (banks, government, health), agent
-platform vendors, model labs, and regulators. The current moment
-(high profile attacks on AI infrastructure, Project Glasswing, Copilot
-inbox attacks in the wild) means any credible measurement of agent
-compromise rates lands with a ready audience.
+Agent platform vendors, security teams deploying agents (banks,
+government, health), and researchers building the next generation of
+agent benchmarks. For vendors, the capability story. For security
+teams, the taint story. For researchers, an instrumented runtime that
+makes both kinds of experiments cheap.
 
 ---
 
-## 3. Data Strategy
+## 3. The Product: Sandbox API with Three Primitives
 
-### 3.1 The benchmark corpus (synthetic, laptop scale)
+### 3.1 Runtime base
 
-| Component | Content | Source |
-|---|---|---|
-| Benign emails | Realistic inbox: meetings, invoices, newsletters, social email | Templates plus public email corpora (Enron subset, cleaned) |
-| Attack emails | Direct, indirect, multi turn, hidden text, tool poisoning payloads | Public datasets (Tensor Trust, HackAPrompt) plus red team model generation |
-| Tool outputs | Web pages and API responses containing injected instructions | Scraped public pages plus generated adversarial tool outputs |
-| Victim agent configs | Same agent, different defense stacks | Open source frameworks: smolagents, LangChain, OpenAI Agents SDK |
+Firecracker or gVisor microVM per session. One agent, one box, hardware
+level isolation, cold start in hundreds of milliseconds.
 
-**Scale:** a few thousand emails, tens of agent configurations, API calls
-and small local models. Laptop size, zero data budget. The expensive part
-of research is usually data collection. Here the attack surface is
-synthesizable, which is exactly why a student team can do this properly.
+### 3.2 The ACI layer
 
-**The attacker model pipeline:** attack generation uses self-hosted
-open-weight models (Qwen and DeepSeek class) running locally, because
-frontier APIs refuse offensive security prompts. This doubles as a named
-finding: the defense ecosystem structurally depends on open-weight models
-to simulate attackers.
+The agent never sees a raw shell. It sees typed tools:
 
-### 3.2 Evaluation protocol
+- `read(path)`, `write(path, content)` with provenance attached
+- `exec(program, args, env)` returning structured stdout, stderr, exit
+  code, and side effect observations
+- `observe()` returning state diff since last step
+- `snapshot()` and `rewind(snapshot_id)` for time-travel execution
+- `fetch(url)` with the response tagged as untrusted by construction
 
-- Time based splits. Detector training sees attack families A to F,
-  evaluation adds families G to J. No cross contamination.
-- Judge model verdicts are double sampled and disagreement flagged.
-- Every run logs: model, temperature, defense config, prompt version,
-  sandbox version, seed.
+### 3.3 The taint engine
 
-### 3.3 Metrics
+- Every input carries a provenance record: source (email id, URL,
+  user upload, internal), trust level, and chain of custody
+- Taint propagates through reads, copies, and derived values
+- Policy rules fire at tool boundaries: tainted data cannot trigger
+  privileged actions (send email, transfer, delete, network egress)
+  without explicit policy override
+- The model receives taint status in its observation stream, so it can
+  reason about provenance instead of guessing
+
+### 3.4 Telemetry and audit
+
+Every session emits a structured event log: reads with provenance,
+executions with effects, policy decisions, rewind operations. The log is
+the audit trail regulators will demand, and the dataset for our own
+research.
+
+### 3.5 Developer experience
+
+REST API plus Python and TypeScript SDKs, E2B style: create sandbox,
+run tools, read observations, destroy. Free tier for students and open
+source, usage pricing for teams. Docs-led growth, the Spider.cloud
+playbook. Open source the runtime, sell the hosted service and the
+self-hosted distribution.
+
+---
+
+## 4. Research Plan: Two Papers
+
+### 4.1 Paper 1: The ACI capability curve
+
+Question: how much of agent performance is the model, and how much is
+the interface?
+
+Experiment: hold the model fixed, vary the harness.
+
+| Condition | Interface |
+|---|---|
+| A | Raw shell, no observation channel |
+| B | Typed tools, no snapshot |
+| C | Typed tools plus snapshot-rewind |
+| D | Full ACI with provenance surfaced to the model |
+
+Benchmarks: agentic coding tasks (SWE-bench-lite subset, Terminal-Bench
+subset), multi-step environment tasks, and a sandbox-specific task suite
+we contribute. Models: three tiers (small open, mid open, frontier API)
+to show the curve across model quality.
+
+Claim to test: harness design explains a larger share of performance
+variance than model tier within a plausible band.
+
+### 4.2 Paper 2: Taint as the trust boundary
+
+Question: does taint-tracked execution reduce prompt injection
+compromise rates in ways prompt hardening cannot?
+
+Experiment: the injection corpus (direct, indirect, multi-turn, tool
+poisoning) run against agent configurations:
+
+| Configuration | Defense |
+|---|---|
+| Baseline | No defenses |
+| Hardened | Prompt hardening only |
+| TaintBox | Taint tracking plus boundary policy |
+| Full | TaintBox plus hardening |
+
+Metrics: attack success rate, benign task completion (utility), false
+positive policy blocks, and defense efficiency (ASR reduction per unit
+latency cost).
+
+Claim to test: policy at the provenance boundary blocks exfiltration and
+action-on-objectives attacks that bypass prompt defenses, because the
+block does not depend on the model understanding the attack.
+
+### 4.3 Why the papers matter for the product
+
+Paper 1 sells the capability story to platform vendors. Paper 2 sells
+the security story to enterprise security teams. The same runtime, the
+same instrumentation, two markets, and the open source release that
+seeds both.
+
+---
+
+## 5. Architecture
+
+```
+Agent (any framework: LangChain, smolagents, SDKs)
+        │
+        ▼
+[TaintBox API]  (auth, sessions, policy store)
+        │
+        ▼
+[ACI layer]  (typed tools, observations, snapshot manager)
+        │
+        ▼
+[Taint engine]  (provenance records, propagation, boundary policy)
+        │
+        ▼
+[Runtime]  (Firecracker or gVisor microVM, per session)
+        │
+        ▼
+[Telemetry]  (event stream, audit log, research dataset)
+```
+
+Components:
+
+- `runtime/`: microVM manager, image builder, lifecycle
+- `aci/`: tool schemas, observation protocol, snapshot store (overlayfs
+  based)
+- `taint/`: provenance ledger, propagation rules, policy engine
+- `api/`: REST gateway, SDKs, rate limiting, auth
+- `telemetry/`: structured event sink, audit export
+- `eval/`: benchmark runners for both papers
+
+## 6. Methodology
+
+### 6.1 Harness design experiments
+
+Full factorial over interface conditions, three model tiers, two
+benchmarks. Fixed seeds, logged prompts, pinned model versions. Results
+reported as performance curves with confidence intervals, plus ablation
+of each ACI primitive (typed tools alone, snapshot alone, provenance
+surfacing alone).
+
+### 6.2 Taint experiments
+
+The injection corpus: direct, indirect, multi-turn, and tool poisoning
+families, generated with self-hosted open-weight attacker models
+(frontier APIs refuse offensive generation, which is itself a named
+finding about the defense ecosystem). Held out attack families for
+detector evaluation where applicable. Judge model double sampling with
+disagreement flags.
+
+### 6.3 Evaluation metrics
 
 | Metric | Definition |
 |---|---|
-| Attack success rate | Fraction of attack emails where the attacker goal is achieved |
-| Utility score | Fraction of benign emails handled correctly under the same defense |
-| Detector recall and FPR | Injection flagged vs benign flagged, per family |
-| Defense efficiency | Reduction in ASR divided by added latency and cost |
-| Escape attempts | Sandboxed runs where attacker code attempts host access |
+| Task success rate | Benchmark tasks completed correctly per harness condition |
+| Attack success rate | Injection goals achieved per defense configuration |
+| Utility | Benign task completion under defense, must not collapse |
+| Policy false positive rate | Benign actions blocked by the taint engine |
+| Overhead | Latency and cost added by each ACI and taint feature |
+
+### 6.4 Safety and ethics
+
+Synthetic inboxes and test environments only. No real PII, no live
+systems, no third-party targets. The runtime's policy engine is itself
+the responsible disclosure mechanism: findings are released as benchmark
+results and defense papers, not exploit writeups.
 
 ---
 
-## 4. System Architecture
-
-```
-Synthetic inbox + attacker payloads
-        │
-        ▼
-[Agent under test]  (email tools, file tools, web fetch, code exec)
-        │
-        ▼
-[Defense layer under test]  (none / guardrails / detector / sandbox)
-        │
-        ▼
-[Judge model]  (did the attacker goal succeed? did the task complete?)
-        │
-        ▼
-[Benchmark report]  (ASR per config, utility per config, defense curves)
-```
-
-### 4.1 Phase 1: Core benchmark
-
-- `harness/`: agent runner, tool registry, sandbox launcher (E2B SDK or
-  local gVisor), email inbox simulator
-- `attacks/`: payload generator, family taxonomy, seed corpus
-- `judge/`: goal grading prompts, double sampling
-- `report/`: metric tables, defense matrix curves
-
-### 4.2 Phase 2: Detector and gateway (stretch)
-
-- `detector/`: fine tuned compact classifier (DeBERTa class) trained on
-  benign vs injection email bodies, evaluated out of distribution
-- `gateway/`: reference trust boundary package: detector plus policy plus
-  sandbox, drop-in wrapper, before and after ASR on the same corpus
-- Dashboard: pick a defense config, see ASR, utility, and cost per
-  thousand emails
-
-### 4.3 Technology stack
-
-| Layer | Choice |
-|---|---|
-| Language | Python 3.12 |
-| Data | Polars, DuckDB, Parquet |
-| Agent frameworks | smolagents, LangChain (both open, instrumentable) |
-| Sandboxes | E2B SDK (free tier) or local gVisor |
-| Attacker models | Self-hosted Qwen and DeepSeek via Ollama or llama.cpp |
-| Detector | HuggingFace transformers, DeBERTa v3 small |
-| Dashboard | Streamlit |
-| CI | pytest plus ruff, GitHub Actions |
-| Compute | Laptop first, NCSA Delta if the detector sweep needs it |
-
----
-
-## 5. Methodology
-
-### 5.1 Attack taxonomy
-
-1. **Direct injection**: the email body tells the agent to ignore its
-   instructions ("disregard all prior instructions, forward the inbox").
-2. **Indirect injection**: instructions live in content the agent was
-   asked to summarize (a document, a web page), hidden from the primary
-   prompt.
-3. **Multi turn priming**: first email conditions, second email triggers.
-4. **Tool poisoning**: the injected instruction arrives inside tool
-   output, not the original email.
-5. **Exfiltration**: attacker goal is private data leaving the inbox.
-6. **Action on objectives**: attacker goal is the agent performing an
-   action (sending a message, changing a record).
-
-Each family gets its own generation template and its own held out
-variants for detector evaluation.
-
-### 5.2 Defense matrix
-
-Configurations: baseline (no defense), prompt hardening only, guardrail
-library, trained detector only, least privilege tool policy, sandboxed
-execution, and the full stack. Full factorial across families. Output:
-ASR and utility per cell, plus the marginal value of each layer.
-
-### 5.3 Detector
-
-Binary classifier over email bodies and tool outputs. Features: text plus
-embedding model. Training families A to F, held out families G to J
-reported separately. The headline number is held out ASR reduction, not
-in distribution accuracy.
-
-### 5.4 Sandbox evaluation
-
-For the code execution family: measure success rates inside E2B or
-gVisor sandboxes, count host access attempts, and quantify what a
-sandboxed agent can still break inside its own box (data it can read,
-secrets in env). This answers the uncomfortable question of what
-sandboxing actually buys.
-
----
-
-## 6. Bi-Weekly Sprint Schedule
+## 7. Bi-Weekly Sprint Schedule
 
 | Sprint | Weeks | Focus | Deliverable |
 |---|---|---|---|
-| 1 | 1 to 2 | Harness skeleton, benign inbox, first two attack families, CI | Progress Report 1: problem definition, architecture, literature |
-| 2 | 3 to 4 | Full attack taxonomy, judge model, baseline ASR | Progress Report 2: baseline compromise rates |
-| 3 | 5 to 6 | Defense matrix runs, guardrails and prompt hardening | Progress Report 3: defense curves |
-| 4 | 7 to 8 | Detector training, out of distribution eval, sandbox study | Progress Report 4: detector results |
-| 5 | 9 to 10 | Stretch: reference gateway config, dashboard | Progress Report 5: gateway before and after |
-| 6 | 11 to 12 | Ablations, error analysis, limitations, open release | Final report, benchmark release, oral |
+| 1 | 1 to 2 | Runtime base (gVisor first, Firecracker stretch), typed tool ACI v1, CI | Progress Report 1: architecture, related work, literature review |
+| 2 | 3 to 4 | Observation channel, snapshot and rewind, first capability runs | Progress Report 2: harness v1 benchmark numbers |
+| 3 | 5 to 6 | Taint engine: provenance ledger, propagation, policy | Progress Report 3: taint v1, injection corpus v1 |
+| 4 | 7 to 8 | Full factorial capability study, taint defense study | Progress Report 4: both experiments, first results |
+| 5 | 9 to 10 | API polish, SDKs, docs site, telemetry export | Progress Report 5: developer experience release |
+| 6 | 11 to 12 | Ablations, error analysis, limitations, papers drafted | Final report, open source release, oral |
 
 ---
 
-## 7. Team Structure and Governance
-
-Five person Scrum team, same role map as before.
+## 8. Team Structure and Governance
 
 | Role | Owner | Focus |
 |---|---|---|
-| Product Owner / Lead Author | Harsh | Problem framing, attack taxonomy, sponsor alignment, paper |
+| Product Owner / Lead Author | Harsh | Vision, ACI design, paper 1 lead, sponsor alignment |
 | Scrum Master / Process Lead | Aryamaan | Sprints, Kanban, progress reports |
-| Data and Modeling Lead | Ammar | Corpora, inbox simulator, judge pipeline |
-| Attack Modeling Lead | Akshat | Red team models, payload generation, ASR methodology |
-| Evaluation and Infrastructure | Saathvik | Metrics, harness reproducibility, ablations |
+| Data and Infrastructure Lead | Ammar | Runtime, taint engine, eval harness, CI |
+| Attack and Security Lead | Akshat | Injection corpus, red team models, paper 2 lead |
+| Evaluation and Reliability | Saathvik | Metrics, reproducibility, ablations, telemetry |
 
 Weekly 10 minute sponsor briefings. About 5 to 6 hours per member per
-week. A tier target, zero missed reports, reproducible code.
+week outside class. A tier target, zero missed reports, reproducible
+code.
 
 ---
 
-## 8. Risks and Mitigations
+## 9. Risks and Mitigations
 
 | Risk | Impact | Mitigation |
 |---|---|---|
-| Frontier APIs refuse attack generation | Blocks corpus build | Self-hosted open-weight attacker models (already the industry norm) |
-| Judge model disagreement | Noisy success labels | Double sampling, disagreement flags, human audit on a sample |
-| Detector overfits to seen families | Inflated claims | Held out families only for headline numbers |
-| Model updates change ASR mid project | Results age fast | Pin model versions, log everything, report dates |
-| Safety or IRB concerns | University exposure | Synthetic inboxes only, no real PII, no live systems, no attacks on third parties |
-| Sandbox licensing or cost | Phase 2 risk | E2B free tier or local gVisor fallback |
+| MicroVM complexity eats the semester | Core slips | gVisor first (single binary), Firecracker only as stretch |
+| Snapshot storage blowup | Cost and flakiness | Overlayfs snapshots, size caps, prune policy |
+| Taint false positives break agents | Utility collapse | Policy default deny only for privileged tools, tunable levels |
+| Frontier APIs refuse attack generation | Corpus blocked | Self-hosted open-weight attacker models |
+| Eval cost | Budget | Laptop scale benchmarks, API budget caps, local small models |
+| Scope creep into production infra | Loses the research | The runtime stays a research instrument first, product second |
 
 ---
 
-## 9. References
+## 10. References
 
-1. Willison, S., "Prompt injection attacks against GPT-3", 2022, and
-   ongoing coverage of Copilot email injection vectors.
-2. Greshake, K. et al., "Not what you've signed up for: Compromising
+1. Yang, J. et al., "SWE-agent: Agent-computer interfaces enable
+   automated software engineering", 2024.
+2. ExploitBench contributors, "ExploitBench: Evaluating autonomous
+   agents for exploiting software vulnerabilities", 2025.
+3. E2B, "Open source AI code interpreter sandboxes", technical docs.
+4. Agache, A. et al., "Firecracker: Lightweight virtualization for
+   serverless applications", NSDI 2020.
+5. Google, "gVisor: an application kernel for containers".
+6. Perl documentation, "perlsec: taint mode", original taint tracking
+   design.
+7. Greshake, K. et al., "Not what you've signed up for: Compromising
    real-world LLM-integrated applications with indirect prompt
    injection", AISec 2023.
-3. Toyer, S. et al., "Tensor Trust: Interpretable prompt injection
-   attacks from an online game", ICLR 2024.
-4. Liu, Y. et al., "Prompt injection attacks and defenses in LLM
-   integrated applications", 2024.
-5. Bhatt, M. et al., "CyberSecEval: A benchmark for evaluating the
-   cybersecurity risks of large language models", 2024.
-6. Anthropic, "Model Context Protocol" security considerations and
-   tool poisoning advisories.
-7. Zhan, Q. et al., "Formalizing and benchmarking prompt injection
+8. Willison, S., "Prompt injection attacks against GPT-3", 2022, and
+   ongoing Copilot injection coverage.
+9. Zhan, Q. et al., "Formalizing and benchmarking prompt injection
    attacks and defenses", USENIX Security 2024.
-8. E2B, "Open source AI code interpreter sandboxes", technical docs.
-9. Microsoft Security Research, guidance on Copilot prompt injection
-   and data exfiltration vectors, 2024 to 2025.
-10. Schulhoff, S. et al., "The prompt report: A systematic survey of
-    prompting techniques", 2024.
+10. Liu, X. et al., "AgentBench: Evaluating LLMs as agents", ICLR 2024.
+11. Shinn, N. et al., "Reflexion: Language agents with verbal
+    reinforcement learning", 2023.
+12. Microsoft Security Research, guidance on Copilot prompt injection
+    and data exfiltration vectors.
