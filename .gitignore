@@ -216,3 +216,9 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# Environment and local TaintBox state
+.env
+.env.*
+!.env.example
+.taintbox/

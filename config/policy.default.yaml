@@ -1,0 +1,37 @@
+# Default TaintBox Security Policy
+version: "1.0"
+policy_name: "default_strict_boundary"
+description: "Deny untrusted data propagation into privileged actions without explicit authorization"
+
+# Tag classifications
+trust_levels:
+  TRUSTED: 0
+  INTERNAL: 1
+  UNTRUSTED: 2
+  HOSTILE: 3
+
+# Boundary rules for tools
+rules:
+  - rule_id: "RULE-001"
+    name: "Block network egress on tainted data"
+    action: "network_egress"
+    condition: "has_taint"
+    min_trust_level_blocked: "UNTRUSTED"
+    effect: "DENY"
+    description: "Prevent exfiltration: tainted data cannot be transmitted over outbound network requests."
+
+  - rule_id: "RULE-002"
+    name: "Block privileged exec on tainted command strings"
+    action: "exec_privileged"
+    condition: "has_taint"
+    min_trust_level_blocked: "UNTRUSTED"
+    effect: "DENY"
+    description: "Prevent command injection: tainted strings cannot be executed in privileged shell/exec contexts."
+
+  - rule_id: "RULE-003"
+    name: "Block destructive writes on tainted destination"
+    action: "file_delete"
+    condition: "has_taint"
+    min_trust_level_blocked: "UNTRUSTED"
+    effect: "DENY"
+    description: "Prevent destructive file deletion triggered by untrusted instruction flow."
