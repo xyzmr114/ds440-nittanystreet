@@ -1,21 +1,11 @@
-use std::collections::{HashMap, HashSet};
+﻿use std::collections::HashMap;
 use crate::models::{PolicyDecision, ProvenanceRecord, ProvenanceTag, TrustLevel};
-
-pub const DEFAULT_PRIVILEGED_ACTIONS: &[&str] = &[
-    "network_egress",
-    "exec_privileged",
-    "file_delete",
-    "send_email",
-    "exfiltrate",
-    "curl",
-    "wget",
-    "rm",
-];
+use crate::taint::policy::{PolicyProfile, TaintPolicyConfig};
 
 #[derive(Debug, Clone)]
 pub struct TaintEngine {
     ledger: HashMap<String, ProvenanceRecord>,
-    privileged_actions: HashSet<String>,
+    pub config: TaintPolicyConfig,
 }
 
 impl Default for TaintEngine {
@@ -26,13 +16,16 @@ impl Default for TaintEngine {
 
 impl TaintEngine {
     pub fn new() -> Self {
-        let mut privileged_actions = HashSet::new();
-        for action in DEFAULT_PRIVILEGED_ACTIONS {
-            privileged_actions.insert(action.to_string());
-        }
         Self {
             ledger: HashMap::new(),
-            privileged_actions,
+            config: TaintPolicyConfig::default(),
+        }
+    }
+
+    pub fn new_with_config(config: TaintPolicyConfig) -> Self {
+        Self {
+            ledger: HashMap::new(),
+            config,
         }
     }
 
@@ -110,7 +103,29 @@ impl TaintEngine {
             }
         }
 
-        let is_privileged = self.privileged_actions.contains(action);
+        let is_privileged = self.config.privileged_actions.contains(action);
+
+        // Strict mode: file writes derived from untrusted input are blocked
+        if self.config.profile == PolicyProfile::Strict && action == "write" && !tainted_records.is_empty() {
+            return PolicyDecision {
+                allowed: false,
+                rule_id: Some("TAINT-STRICT-WRITE".to_string()),
+                action: action.to_string(),
+                reason: "Strict zero-trust mode: file writes derived from untrusted inputs are blocked".to_string(),
+                taint_records: tainted_records,
+            };
+        }
+
+        // AuditOnly mode: record violation in telemetry without blocking (for Paper 2 observation)
+        if self.config.profile == PolicyProfile::AuditOnly && is_privileged && !tainted_records.is_empty() {
+            return PolicyDecision {
+                allowed: true,
+                rule_id: Some("AUDIT-LOGGED".to_string()),
+                action: action.to_string(),
+                reason: "Audit-only research mode: policy violation recorded in telemetry without blocking".to_string(),
+                taint_records: tainted_records,
+            };
+        }
 
         if is_privileged && !tainted_records.is_empty() {
             let tainted_names: Vec<String> = tainted_records.iter().map(|r| r.source_id.clone()).collect();
@@ -133,6 +148,70 @@ impl TaintEngine {
                 taint_records: tainted_records,
             }
         }
+    }
+
+    pub fn evaluate_path_policy(&self, action: &str, path: &str, resource_ids: &[String]) -> PolicyDecision {
+        if self.config.is_path_sensitive(path) {
+            return PolicyDecision {
+                allowed: false,
+                rule_id: Some("TAINT-PATH-SECRET".to_string()),
+                action: action.to_string(),
+                reason: format!("Sensitive path protection: access or mutation of secret path '{}' is blocked", path),
+                taint_records: vec![],
+            };
+        }
+        self.evaluate_policy(action, resource_ids)
+    }
+
+    pub fn evaluate_network_egress(&self, url: &str, resource_ids: &[String]) -> PolicyDecision {
+        let mut tainted_records = Vec::new();
+        for rid in resource_ids {
+            if let Some(rec) = self.get_provenance(rid) {
+                if rec.trust_level.is_tainted() {
+                    tainted_records.push(rec.clone());
+                }
+            }
+        }
+
+        if !tainted_records.is_empty() {
+            if self.config.is_network_allowed(url) {
+                return PolicyDecision {
+                    allowed: true,
+                    rule_id: Some("TAINT-NETWORK-ALLOWLIST-APPROVED".to_string()),
+                    action: "network_egress".to_string(),
+                    reason: format!("Approved network destination '{}' permitted by allowlist", url),
+                    taint_records: tainted_records,
+                };
+            } else {
+                return PolicyDecision {
+                    allowed: false,
+                    rule_id: Some("TAINT-NETWORK-ALLOWLIST".to_string()),
+                    action: "network_egress".to_string(),
+                    reason: format!("Egress destination '{}' is not in approved allowlist while carrying tainted data", url),
+                    taint_records: tainted_records,
+                };
+            }
+        }
+
+        PolicyDecision {
+            allowed: true,
+            rule_id: None,
+            action: "network_egress".to_string(),
+            reason: "Untainted network egress permitted".to_string(),
+            taint_records: vec![],
+        }
+    }
+
+    pub fn declassify(&mut self, resource_id: &str, token: &str) -> bool {
+        if self.config.valid_tokens.contains(token) {
+            if let Some(rec) = self.ledger.get_mut(resource_id) {
+                rec.trust_level = TrustLevel::Trusted;
+                rec.tag = ProvenanceTag::User;
+                rec.chain_of_custody.push(format!("DECLASSIFIED_BY_{}", token));
+                return true;
+            }
+        }
+        false
     }
 
     pub fn list_tainted_resources(&self) -> Vec<String> {

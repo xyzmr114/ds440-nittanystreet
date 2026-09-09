@@ -58,6 +58,20 @@ impl ACIHarness {
 
     pub fn read(&mut self, path: &str) -> ToolResult {
         let call_id = Uuid::new_v4().to_string();
+        let decision = self.taint_engine.evaluate_path_policy("read", path, &[]);
+        if !decision.allowed {
+            self.log_event("POLICY_BLOCK", "read", serde_json::json!({ "path": path, "reason": decision.reason }));
+            return ToolResult {
+                call_id,
+                tool_name: "read".to_string(),
+                status: "BLOCKED_BY_POLICY".to_string(),
+                output: serde_json::Value::Null,
+                error: Some(format!("Policy violation: {}", decision.reason)),
+                provenance: None,
+                policy_decision: Some(decision),
+            };
+        }
+
         match self.runtime.read_file(path) {
             Ok(content) => {
                 let rec = self
@@ -103,6 +117,20 @@ impl ACIHarness {
 
     pub fn write(&mut self, path: &str, content: &str, source_ids: Option<Vec<String>>) -> ToolResult {
         let call_id = Uuid::new_v4().to_string();
+        let sources = source_ids.as_deref().unwrap_or(&[]);
+        let decision = self.taint_engine.evaluate_path_policy("write", path, sources);
+        if !decision.allowed {
+            self.log_event("POLICY_BLOCK", "write", serde_json::json!({ "path": path, "reason": decision.reason }));
+            return ToolResult {
+                call_id,
+                tool_name: "write".to_string(),
+                status: "BLOCKED_BY_POLICY".to_string(),
+                output: serde_json::Value::Null,
+                error: Some(format!("Policy violation: {}", decision.reason)),
+                provenance: None,
+                policy_decision: Some(decision),
+            };
+        }
         match self.runtime.write_file(path, content) {
             Ok(_) => {
                 let rec = if let Some(sources) = &source_ids {
@@ -156,6 +184,21 @@ impl ACIHarness {
         source_ids: Option<Vec<String>>,
     ) -> ToolResult {
         let call_id = Uuid::new_v4().to_string();
+        let sources = source_ids.as_deref().unwrap_or(&[]);
+        let decision = self.taint_engine.evaluate_path_policy("write", path, sources);
+        if !decision.allowed {
+            self.log_event("POLICY_BLOCK", "edit_block", serde_json::json!({ "path": path, "reason": decision.reason }));
+            return ToolResult {
+                call_id,
+                tool_name: "edit_block".to_string(),
+                status: "BLOCKED_BY_POLICY".to_string(),
+                output: serde_json::Value::Null,
+                error: Some(format!("Policy violation: {}", decision.reason)),
+                provenance: None,
+                policy_decision: Some(decision),
+            };
+        }
+
         let current = match self.runtime.read_file(path) {
             Ok(c) => c,
             Err(e) => {
@@ -413,6 +456,36 @@ impl ACIHarness {
             let clean = arg.trim_start_matches('@').trim();
             if self.runtime.file_exists(clean) {
                 referenced_files.push(clean.to_string());
+            }
+        }
+
+        if action == "network_egress" {
+            let target_url = args
+                .iter()
+                .find(|a| a.starts_with("http://") || a.starts_with("https://") || a.contains("://"))
+                .map(|s| s.as_str())
+                .unwrap_or("https://unknown-egress");
+            let net_decision =
+                self.taint_engine.evaluate_network_egress(target_url, &referenced_files);
+            if !net_decision.allowed {
+                self.log_event(
+                    "POLICY_BLOCK",
+                    action,
+                    serde_json::json!({
+                        "program": program,
+                        "args": args,
+                        "reason": net_decision.reason
+                    }),
+                );
+                return ToolResult {
+                    call_id,
+                    tool_name: "exec".to_string(),
+                    status: "BLOCKED_BY_POLICY".to_string(),
+                    output: serde_json::Value::Null,
+                    error: Some(net_decision.reason.clone()),
+                    provenance: None,
+                    policy_decision: Some(net_decision),
+                };
             }
         }
 
