@@ -10,5 +10,5 @@ pub mod taint;
 pub use aci::ACIHarness;
 pub use models::*;
 pub use runtime::{LocalIsolatedRuntime, SandboxRuntime};
-pub use store::SessionManager;
+pub use store::{PostgresStore, SessionManager};
 pub use taint::TaintEngine;

@@ -41,6 +41,14 @@ pub struct ToolWriteRequest {
 }
 
 #[derive(Debug, Deserialize)]
+pub struct ToolEditBlockRequest {
+    pub path: String,
+    pub target_content: String,
+    pub replacement_content: String,
+    pub source_ids: Option<Vec<String>>,
+}
+
+#[derive(Debug, Deserialize)]
 pub struct ToolFetchRequest {
     pub url: String,
     pub save_as: Option<String>,
@@ -72,6 +80,7 @@ pub fn create_router(state: AppState) -> Router {
         .route("/v1/sandboxes/:id", delete(delete_sandbox))
         .route("/v1/sandboxes/:id/tools/read", post(tool_read))
         .route("/v1/sandboxes/:id/tools/write", post(tool_write))
+        .route("/v1/sandboxes/:id/tools/edit_block", post(tool_edit_block))
         .route("/v1/sandboxes/:id/tools/fetch", post(tool_fetch))
         .route("/v1/sandboxes/:id/tools/exec", post(tool_exec))
         .route("/v1/sandboxes/:id/snapshots", post(create_snapshot))
@@ -141,6 +150,17 @@ async fn tool_write(
     let harness_arc = state.session_manager.get_session(&id).await.ok_or(StatusCode::NOT_FOUND)?;
     let mut harness = harness_arc.lock().await;
     let res = harness.write(&req.path, &req.content, req.source_ids);
+    Ok(Json(res))
+}
+
+async fn tool_edit_block(
+    State(state): State<AppState>,
+    Path(id): Path<String>,
+    Json(req): Json<ToolEditBlockRequest>,
+) -> Result<Json<ToolResult>, StatusCode> {
+    let harness_arc = state.session_manager.get_session(&id).await.ok_or(StatusCode::NOT_FOUND)?;
+    let mut harness = harness_arc.lock().await;
+    let res = harness.edit_block(&req.path, &req.target_content, &req.replacement_content, req.source_ids);
     Ok(Json(res))
 }
 

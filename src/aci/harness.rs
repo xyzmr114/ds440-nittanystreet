@@ -148,6 +148,104 @@ impl ACIHarness {
         }
     }
 
+    pub fn edit_block(
+        &mut self,
+        path: &str,
+        target_content: &str,
+        replacement_content: &str,
+        source_ids: Option<Vec<String>>,
+    ) -> ToolResult {
+        let call_id = Uuid::new_v4().to_string();
+        let current = match self.runtime.read_file(path) {
+            Ok(c) => c,
+            Err(e) => {
+                return ToolResult {
+                    call_id,
+                    tool_name: "edit_block".to_string(),
+                    status: "ERROR".to_string(),
+                    output: serde_json::Value::Null,
+                    error: Some(e.to_string()),
+                    provenance: None,
+                    policy_decision: None,
+                };
+            }
+        };
+
+        if !current.contains(target_content) {
+            return ToolResult {
+                call_id,
+                tool_name: "edit_block".to_string(),
+                status: "ERROR".to_string(),
+                output: serde_json::Value::Null,
+                error: Some(format!("Target content not found in file: {}", path)),
+                provenance: None,
+                policy_decision: None,
+            };
+        }
+
+        let modified = current.replacen(target_content, replacement_content, 1);
+        match self.runtime.write_file(path, &modified) {
+            Ok(_) => {
+                let rec = if let Some(sources) = &source_ids {
+                    self.taint_engine.propagate(sources, path, None)
+                } else {
+                    let prev_rec = self.taint_engine.get_provenance(path).cloned();
+                    prev_rec.unwrap_or_else(|| {
+                        let new_rec = ProvenanceRecord {
+                            source_id: path.to_string(),
+                            tag: ProvenanceTag::User,
+                            trust_level: TrustLevel::Internal,
+                            chain_of_custody: vec![],
+                            timestamp: chrono::Utc::now().timestamp_millis() as f64 / 1000.0,
+                            metadata: serde_json::json!({}),
+                        };
+                        self.taint_engine.record_provenance(path, new_rec.clone());
+                        new_rec
+                    })
+                };
+
+                self.log_event("TOOL_EDIT_BLOCK", "edit_block", serde_json::json!({ "path": path }));
+
+                ToolResult {
+                    call_id,
+                    tool_name: "edit_block".to_string(),
+                    status: "SUCCESS".to_string(),
+                    output: serde_json::json!(format!("Successfully replaced block in {}", path)),
+                    error: None,
+                    provenance: Some(rec),
+                    policy_decision: None,
+                }
+            }
+            Err(e) => ToolResult {
+                call_id,
+                tool_name: "edit_block".to_string(),
+                status: "ERROR".to_string(),
+                output: serde_json::Value::Null,
+                error: Some(e.to_string()),
+                provenance: None,
+                policy_decision: None,
+            },
+        }
+    }
+
+    pub fn fold_output(&self, text: &str, head_lines: usize, tail_lines: usize) -> String {
+        let lines: Vec<&str> = text.lines().collect();
+        if lines.len() <= head_lines + tail_lines {
+            return text.to_string();
+        }
+
+        let head = &lines[..head_lines];
+        let tail = &lines[lines.len() - tail_lines..];
+        let truncated_count = lines.len() - head_lines - tail_lines;
+
+        format!(
+            "{}\n\n... [{} lines truncated to preserve model context] ...\n\n{}",
+            head.join("\n"),
+            truncated_count,
+            tail.join("\n")
+        )
+    }
+
     pub fn fetch(&mut self, url: &str, save_as: Option<&str>, mock_content: Option<&str>) -> ToolResult {
         let call_id = Uuid::new_v4().to_string();
         let target_path = save_as.map(|s| s.to_string()).unwrap_or_else(|| {
