@@ -49,6 +49,25 @@ pub struct ToolEditBlockRequest {
 }
 
 #[derive(Debug, Deserialize)]
+pub struct ToolViewLinesRequest {
+    pub path: String,
+    pub start_line: usize,
+    pub end_line: usize,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct ToolSearchFilesRequest {
+    pub pattern: String,
+    pub path: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct ToolGrepRequest {
+    pub query: String,
+    pub path: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
 pub struct ToolFetchRequest {
     pub url: String,
     pub save_as: Option<String>,
@@ -76,11 +95,15 @@ pub struct RewindRequest {
 pub fn create_router(state: AppState) -> Router {
     Router::new()
         .route("/health", get(health_check))
+        .route("/v1/schemas/tools", get(get_tool_schemas))
         .route("/v1/sandboxes", post(create_sandbox).get(list_sandboxes))
         .route("/v1/sandboxes/:id", delete(delete_sandbox))
         .route("/v1/sandboxes/:id/tools/read", post(tool_read))
         .route("/v1/sandboxes/:id/tools/write", post(tool_write))
+        .route("/v1/sandboxes/:id/tools/view_lines", post(tool_view_lines))
         .route("/v1/sandboxes/:id/tools/edit_block", post(tool_edit_block))
+        .route("/v1/sandboxes/:id/tools/search_files", post(tool_search_files))
+        .route("/v1/sandboxes/:id/tools/grep", post(tool_grep))
         .route("/v1/sandboxes/:id/tools/fetch", post(tool_fetch))
         .route("/v1/sandboxes/:id/tools/exec", post(tool_exec))
         .route("/v1/sandboxes/:id/snapshots", post(create_snapshot))
@@ -153,6 +176,17 @@ async fn tool_write(
     Ok(Json(res))
 }
 
+async fn tool_view_lines(
+    State(state): State<AppState>,
+    Path(id): Path<String>,
+    Json(req): Json<ToolViewLinesRequest>,
+) -> Result<Json<ToolResult>, StatusCode> {
+    let harness_arc = state.session_manager.get_session(&id).await.ok_or(StatusCode::NOT_FOUND)?;
+    let mut harness = harness_arc.lock().await;
+    let res = harness.view_lines(&req.path, req.start_line, req.end_line);
+    Ok(Json(res))
+}
+
 async fn tool_edit_block(
     State(state): State<AppState>,
     Path(id): Path<String>,
@@ -162,6 +196,34 @@ async fn tool_edit_block(
     let mut harness = harness_arc.lock().await;
     let res = harness.edit_block(&req.path, &req.target_content, &req.replacement_content, req.source_ids);
     Ok(Json(res))
+}
+
+async fn tool_search_files(
+    State(state): State<AppState>,
+    Path(id): Path<String>,
+    Json(req): Json<ToolSearchFilesRequest>,
+) -> Result<Json<ToolResult>, StatusCode> {
+    let harness_arc = state.session_manager.get_session(&id).await.ok_or(StatusCode::NOT_FOUND)?;
+    let mut harness = harness_arc.lock().await;
+    let res = harness.search_files(&req.pattern);
+    Ok(Json(res))
+}
+
+async fn tool_grep(
+    State(state): State<AppState>,
+    Path(id): Path<String>,
+    Json(req): Json<ToolGrepRequest>,
+) -> Result<Json<ToolResult>, StatusCode> {
+    let harness_arc = state.session_manager.get_session(&id).await.ok_or(StatusCode::NOT_FOUND)?;
+    let mut harness = harness_arc.lock().await;
+    let res = harness.grep(&req.query);
+    Ok(Json(res))
+}
+
+async fn get_tool_schemas() -> impl IntoResponse {
+    Json(serde_json::json!({
+        "tools": crate::aci::schemas::get_all_tool_definitions()
+    }))
 }
 
 async fn tool_fetch(

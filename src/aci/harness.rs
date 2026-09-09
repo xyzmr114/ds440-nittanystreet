@@ -246,6 +246,114 @@ impl ACIHarness {
         )
     }
 
+    pub fn view_lines(&mut self, path: &str, start_line: usize, end_line: usize) -> ToolResult {
+        let call_id = Uuid::new_v4().to_string();
+        match self.runtime.read_file(path) {
+            Ok(content) => {
+                let lines: Vec<&str> = content.lines().collect();
+                if lines.is_empty() {
+                    return ToolResult {
+                        call_id,
+                        tool_name: "view_lines".to_string(),
+                        status: "SUCCESS".to_string(),
+                        output: serde_json::Value::String(String::new()),
+                        error: None,
+                        provenance: self.taint_engine.get_provenance(path).cloned(),
+                        policy_decision: None,
+                    };
+                }
+
+                let start_idx = if start_line == 0 { 0 } else { start_line - 1 };
+                let end_idx = std::cmp::min(end_line, lines.len());
+
+                let mut formatted = String::new();
+                for (idx, line) in lines.iter().enumerate().take(end_idx).skip(start_idx) {
+                    formatted.push_str(&format!("{}: {}\n", idx + 1, line));
+                }
+
+                self.log_event("TOOL_VIEW_LINES", "view_lines", serde_json::json!({ "path": path, "start": start_line, "end": end_line }));
+
+                ToolResult {
+                    call_id,
+                    tool_name: "view_lines".to_string(),
+                    status: "SUCCESS".to_string(),
+                    output: serde_json::Value::String(formatted),
+                    error: None,
+                    provenance: self.taint_engine.get_provenance(path).cloned(),
+                    policy_decision: None,
+                }
+            }
+            Err(e) => ToolResult {
+                call_id,
+                tool_name: "view_lines".to_string(),
+                status: "ERROR".to_string(),
+                output: serde_json::Value::Null,
+                error: Some(e.to_string()),
+                provenance: None,
+                policy_decision: None,
+            },
+        }
+    }
+
+    pub fn search_files(&mut self, pattern: &str) -> ToolResult {
+        let call_id = Uuid::new_v4().to_string();
+        let all_files = self.runtime.list_files();
+
+        let clean_pattern = pattern.trim_start_matches('*').trim_end_matches('*');
+        let matched: Vec<String> = all_files
+            .into_iter()
+            .filter(|f| {
+                if pattern == "*" || pattern == "**/*" {
+                    true
+                } else if pattern.starts_with('*') {
+                    f.ends_with(clean_pattern)
+                } else {
+                    f.contains(clean_pattern)
+                }
+            })
+            .collect();
+
+        self.log_event("TOOL_SEARCH_FILES", "search_files", serde_json::json!({ "pattern": pattern, "matches": matched.len() }));
+
+        ToolResult {
+            call_id,
+            tool_name: "search_files".to_string(),
+            status: "SUCCESS".to_string(),
+            output: serde_json::to_value(&matched).unwrap_or(serde_json::json!([])),
+            error: None,
+            provenance: None,
+            policy_decision: None,
+        }
+    }
+
+    pub fn grep(&mut self, query: &str) -> ToolResult {
+        let call_id = Uuid::new_v4().to_string();
+        let all_files = self.runtime.list_files();
+        let mut results = String::new();
+
+        for file in all_files {
+            if let Ok(content) = self.runtime.read_file(&file) {
+                for (idx, line) in content.lines().enumerate() {
+                    if line.contains(query) {
+                        results.push_str(&format!("{}:{}: {}\n", file, idx + 1, line));
+                    }
+                }
+            }
+        }
+
+        self.log_event("TOOL_GREP", "grep", serde_json::json!({ "query": query }));
+
+        ToolResult {
+            call_id,
+            tool_name: "grep".to_string(),
+            status: "SUCCESS".to_string(),
+            output: serde_json::Value::String(results),
+            error: None,
+            provenance: None,
+            policy_decision: None,
+        }
+    }
+
     pub fn fetch(&mut self, url: &str, save_as: Option<&str>, mock_content: Option<&str>) -> ToolResult {
         let call_id = Uuid::new_v4().to_string();
         let target_path = save_as.map(|s| s.to_string()).unwrap_or_else(|| {
