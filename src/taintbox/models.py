@@ -72,3 +72,4 @@ class Observation(BaseModel):
     deleted_files: List[str] = Field(default_factory=list)
     active_taint_count: int = 0
     tainted_resources: List[str] = Field(default_factory=list)
+    provenance_context: Dict[str, Any] = Field(default_factory=dict)

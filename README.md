@@ -83,19 +83,29 @@ Agent (LangChain, smolagents, Custom Harness, SDK)
 
 ## 5. Quick Start
 
-### Installation
+### Installation & Setup
 
+**Option A: Using `uv` (Recommended)**
 ```bash
 git clone https://github.com/xyzmr114/ds440-nittanystreet.git
 cd ds440-nittanystreet
 uv sync
 ```
 
+**Option B: Using `pip`**
+```bash
+git clone https://github.com/xyzmr114/ds440-nittanystreet.git
+cd ds440-nittanystreet
+python -m pip install -r requirements-dev.txt -e .
+```
+
 ### Running Tests
 
 ```bash
+# With uv:
 uv run pytest
-# or with python:
+
+# Or standard python:
 python -m pytest tests/ -v
 ```
 

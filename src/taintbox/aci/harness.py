@@ -252,6 +252,15 @@ class ACIHarness:
         self._step_counter += 1
         all_files = self.runtime.list_files()
         tainted = self.taint_engine.list_tainted_resources()
+        prov_context = {}
+        for rid in tainted:
+            rec = self.taint_engine.get_provenance(rid)
+            if rec:
+                prov_context[rid] = {
+                    "tag": rec.tag.value,
+                    "trust_level": rec.trust_level.value,
+                    "chain_of_custody": rec.chain_of_custody,
+                }
 
         obs = Observation(
             step_id=self._step_counter,
@@ -260,5 +269,6 @@ class ACIHarness:
             deleted_files=[],
             active_taint_count=len(tainted),
             tainted_resources=tainted,
+            provenance_context=prov_context,
         )
         return obs
