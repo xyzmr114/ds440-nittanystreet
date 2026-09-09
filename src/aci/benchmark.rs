@@ -1,0 +1,136 @@
+use std::collections::HashMap;
+use serde::{Deserialize, Serialize};
+
+use crate::aci::agent_loop::{AgentLoop, AgentStopReason, LlmDriver};
+use crate::aci::ACIHarness;
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub enum BenchmarkCategory {
+    Capability,
+    TaintDefenseDirect,
+    TaintDefenseIndirect,
+    TaintDefenseToolPoisoning,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct BenchmarkScenario {
+    pub id: String,
+    pub category: BenchmarkCategory,
+    pub task_prompt: String,
+    pub setup_files: HashMap<String, String>,
+    pub mock_urls: HashMap<String, String>,
+    pub expected_file_contains: Option<(String, String)>,
+    pub max_steps: usize,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct BenchmarkResult {
+    pub scenario_id: String,
+    pub category: BenchmarkCategory,
+    pub success: bool,
+    pub steps_taken: usize,
+    pub attack_detected: bool,
+    pub exfiltration_blocked: bool,
+    pub taint_violations: usize,
+    pub stop_reason: AgentStopReason,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct BenchmarkSuiteReport {
+    pub total_scenarios: usize,
+    pub capability_solved: usize,
+    pub capability_total: usize,
+    pub defense_violations_blocked: usize,
+    pub results: Vec<BenchmarkResult>,
+}
+
+pub struct BenchmarkRunner;
+
+impl Default for BenchmarkRunner {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl BenchmarkRunner {
+    pub fn new() -> Self {
+        Self
+    }
+
+    pub async fn run_scenario(
+        &self,
+        scenario: &BenchmarkScenario,
+        driver: &dyn LlmDriver,
+    ) -> anyhow::Result<BenchmarkResult> {
+        let mut harness = ACIHarness::new_with_temp_dir()?;
+
+        // 1. Seed initial files
+        for (path, content) in &scenario.setup_files {
+            harness.write(path, content, None);
+        }
+
+        // 2. Execute agent loop
+        let mut agent_loop = AgentLoop::new(scenario.max_steps);
+        let run_result = agent_loop.run(&mut harness, driver, &scenario.task_prompt).await?;
+
+        // 3. Verify capability goal if requested
+        let mut success = run_result.stop_reason == AgentStopReason::Completed;
+        if let Some((target_path, substr)) = &scenario.expected_file_contains {
+            let read_res = harness.read(target_path);
+            if let Some(content) = read_res.output.as_str() {
+                if !content.contains(substr) {
+                    success = false;
+                }
+            } else {
+                success = false;
+            }
+        }
+
+        let exfiltration_blocked = run_result.taint_violations > 0;
+        let obs = harness.observe();
+        let attack_detected = obs.active_taint_count > 0 || exfiltration_blocked;
+
+        Ok(BenchmarkResult {
+            scenario_id: scenario.id.clone(),
+            category: scenario.category.clone(),
+            success,
+            steps_taken: run_result.total_steps,
+            attack_detected,
+            exfiltration_blocked,
+            taint_violations: run_result.taint_violations,
+            stop_reason: run_result.stop_reason,
+        })
+    }
+
+    pub async fn run_suite(
+        &self,
+        scenarios: &[BenchmarkScenario],
+        driver: &dyn LlmDriver,
+    ) -> anyhow::Result<BenchmarkSuiteReport> {
+        let mut results = Vec::new();
+        let mut cap_solved = 0;
+        let mut cap_total = 0;
+        let mut defense_blocked = 0;
+
+        for scenario in scenarios {
+            let res = self.run_scenario(scenario, driver).await?;
+            if scenario.category == BenchmarkCategory::Capability {
+                cap_total += 1;
+                if res.success {
+                    cap_solved += 1;
+                }
+            } else if res.exfiltration_blocked {
+                defense_blocked += 1;
+            }
+            results.push(res);
+        }
+
+        Ok(BenchmarkSuiteReport {
+            total_scenarios: scenarios.len(),
+            capability_solved: cap_solved,
+            capability_total: cap_total,
+            defense_violations_blocked: defense_blocked,
+            results,
+        })
+    }
+}
