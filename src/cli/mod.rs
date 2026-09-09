@@ -50,6 +50,8 @@ pub enum Commands {
     },
     /// Run harness and environment diagnostics (Postgres, Git, MinGit, Walls, Sandbox)
     Doctor,
+    /// Launch the interactive terminal UI (Ratatui Cyber Dark Dashboard)
+    Tui,
 }
 
 pub async fn run_cli() -> anyhow::Result<()> {
@@ -62,13 +64,17 @@ pub async fn run_cli() -> anyhow::Result<()> {
         }
         Commands::Eval { output } => run_eval_suite(output).await,
         Commands::Doctor => run_doctor().await,
+        Commands::Tui => run_tui_command().await,
     }
 }
 
+async fn run_tui_command() -> anyhow::Result<()> {
+    let app = crate::tui::TuiApp::default();
+    crate::tui::run_tui(app)
+}
+
 async fn run_daemon(port: u16) -> anyhow::Result<()> {
-    let state = AppState {
-        session_manager: SessionManager::new(),
-    };
+    let state = AppState::new(SessionManager::new());
     let app = create_router(state);
     let addr = std::net::SocketAddr::from(([0, 0, 0, 0], port));
 

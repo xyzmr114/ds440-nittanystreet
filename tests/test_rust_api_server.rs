@@ -9,9 +9,7 @@ use taintbox::store::SessionManager;
 
 #[tokio::test]
 async fn test_health_endpoint() {
-    let state = AppState {
-        session_manager: SessionManager::new(),
-    };
+    let state = AppState::new(SessionManager::new());
     let app = create_router(state);
 
     let response = app
@@ -29,9 +27,7 @@ async fn test_health_endpoint() {
 
 #[tokio::test]
 async fn test_create_and_delete_sandbox() {
-    let state = AppState {
-        session_manager: SessionManager::new(),
-    };
+    let state = AppState::new(SessionManager::new());
     let app = create_router(state.clone());
 
     // 1. Create sandbox
@@ -63,9 +59,7 @@ async fn test_create_and_delete_sandbox() {
 
 #[tokio::test]
 async fn test_api_tool_write_and_read() {
-    let state = AppState {
-        session_manager: SessionManager::new(),
-    };
+    let state = AppState::new(SessionManager::new());
     let app = create_router(state.clone());
 
     // Create session

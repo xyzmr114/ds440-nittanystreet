@@ -7,12 +7,32 @@ use axum::{
 };
 use serde::{Deserialize, Serialize};
 
+use crate::config::providers::{ProviderManager, ProviderRegistry};
+use crate::metrics::{MetricsCollector, MetricsSummary};
 use crate::models::{Observation, SnapshotMetadata, ToolResult};
 use crate::store::SessionManager;
 
 #[derive(Clone)]
 pub struct AppState {
     pub session_manager: SessionManager,
+    pub metrics: MetricsCollector,
+    pub providers: ProviderManager,
+}
+
+impl Default for AppState {
+    fn default() -> Self {
+        Self::new(SessionManager::new())
+    }
+}
+
+impl AppState {
+    pub fn new(session_manager: SessionManager) -> Self {
+        Self {
+            session_manager,
+            metrics: MetricsCollector::new(),
+            providers: ProviderManager::new(),
+        }
+    }
 }
 
 #[derive(Debug, Deserialize)]
@@ -110,6 +130,10 @@ pub fn create_router(state: AppState) -> Router {
         .route("/v1/sandboxes/:id/rewind", post(rewind_snapshot))
         .route("/v1/sandboxes/:id/observe", get(observe_sandbox))
         .route("/v1/sandboxes/:id/telemetry", get(export_telemetry))
+        .route("/v1/metrics", get(get_metrics_summary))
+        .route("/v1/metrics/events", get(get_recent_events))
+        .route("/v1/providers", get(get_providers).post(update_providers))
+        .route("/v1/taint/graph", get(get_taint_graph))
         .with_state(state)
 }
 
@@ -304,4 +328,74 @@ async fn export_telemetry(
         "count": events.len(),
         "events": events
     })))
+}
+
+#[derive(Debug, Deserialize)]
+pub struct UpdateProvidersRequest {
+    pub spider_api_key: Option<String>,
+    pub spider_endpoint: Option<String>,
+    pub spider_concurrency: Option<usize>,
+    pub bunker_endpoint: Option<String>,
+    pub bunker_model: Option<String>,
+    pub frontier_provider: Option<String>,
+    pub frontier_api_key: Option<String>,
+    pub frontier_model: Option<String>,
+}
+
+async fn get_metrics_summary(State(state): State<AppState>) -> Json<MetricsSummary> {
+    Json(state.metrics.get_summary())
+}
+
+async fn get_recent_events(State(state): State<AppState>) -> Json<Vec<crate::models::AuditEvent>> {
+    Json(state.metrics.get_recent_events(50))
+}
+
+async fn get_providers(State(state): State<AppState>) -> Json<ProviderRegistry> {
+    Json(state.providers.get_registry())
+}
+
+async fn update_providers(
+    State(mut state): State<AppState>,
+    Json(payload): Json<UpdateProvidersRequest>,
+) -> (StatusCode, Json<serde_json::Value>) {
+    if payload.spider_api_key.is_some() || payload.spider_endpoint.is_some() || payload.spider_concurrency.is_some() {
+        state.providers.update_spider(payload.spider_api_key, payload.spider_endpoint, payload.spider_concurrency);
+    }
+    if payload.bunker_endpoint.is_some() || payload.bunker_model.is_some() {
+        state.providers.update_bunker(payload.bunker_endpoint, payload.bunker_model);
+    }
+    if payload.frontier_provider.is_some() || payload.frontier_api_key.is_some() || payload.frontier_model.is_some() {
+        state.providers.update_frontier(payload.frontier_provider, payload.frontier_api_key, payload.frontier_model);
+    }
+    (StatusCode::OK, Json(serde_json::json!({ "status": "updated", "providers": state.providers.get_registry() })))
+}
+
+async fn get_taint_graph(State(state): State<AppState>) -> Json<serde_json::Value> {
+    let sessions = state.session_manager.list_sessions().await;
+    let mut nodes = Vec::new();
+    let mut edges = Vec::new();
+
+    for sid in sessions {
+        if let Some(harness_arc) = state.session_manager.get_session(&sid).await {
+            let harness = harness_arc.lock().await;
+            for t in harness.taint_engine.list_tainted_resources() {
+                if let Some(rec) = harness.taint_engine.get_provenance(&t) {
+                    nodes.push(serde_json::json!({
+                        "id": t,
+                        "label": t,
+                        "trust_level": rec.trust_level,
+                        "tag": rec.tag,
+                        "sandbox_id": sid,
+                    }));
+                    for parent in &rec.chain_of_custody {
+                        edges.push(serde_json::json!({
+                            "source": parent,
+                            "target": t,
+                        }));
+                    }
+                }
+            }
+        }
+    }
+    Json(serde_json::json!({ "nodes": nodes, "edges": edges }))
 }

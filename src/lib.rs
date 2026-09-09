@@ -3,10 +3,13 @@
 pub mod aci;
 pub mod api;
 pub mod cli;
+pub mod config;
+pub mod metrics;
 pub mod models;
 pub mod runtime;
 pub mod store;
 pub mod taint;
+pub mod tui;
 pub mod walls;
 
 pub use aci::ACIHarness;
