@@ -44,6 +44,10 @@ impl ACIHarness {
         })
     }
 
+    pub fn root_dir(&self) -> Option<std::path::PathBuf> {
+        self.runtime.root_dir()
+    }
+
     fn log_event(&mut self, event_type: &str, action: &str, details: serde_json::Value) {
         let event = AuditEvent {
             id: Uuid::new_v4().to_string(),

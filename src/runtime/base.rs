@@ -12,6 +12,7 @@ pub trait SandboxRuntime: Send + Sync {
     fn execute_command(&self, program: &str, args: &[String]) -> (i32, String, String);
     fn create_snapshot(&self, snapshot_id: &str) -> anyhow::Result<HashMap<String, String>>;
     fn restore_snapshot(&self, snapshot_id: &str) -> anyhow::Result<()>;
+    fn root_dir(&self) -> Option<PathBuf> { None }
 }
 
 #[derive(Debug, Clone)]
@@ -171,5 +172,9 @@ impl SandboxRuntime for LocalIsolatedRuntime {
         }
 
         Ok(())
+    }
+
+    fn root_dir(&self) -> Option<PathBuf> {
+        Some(self.root_path.clone())
     }
 }

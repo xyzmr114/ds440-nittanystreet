@@ -10,9 +10,11 @@ use crate::api::routes::{create_router, AppState};
 use crate::store::SessionManager;
 use crate::walls::promptinject::PromptInjectScanner;
 
+pub mod interactive;
+
 #[derive(Parser)]
-#[command(name = "taintbox", author = "Group 2 Nittany Street", version = "0.1.0")]
-#[command(about = "TaintBox: Taint-Tracked Sandbox Runtime & Agent-Computer Interface Harness", long_about = None)]
+#[command(name = "tbox", author = "Group 2 Nittany Street", version = "0.1.0")]
+#[command(about = "tbox: Interactive AI Coding Agent Harness & Taint-Tracked Sandbox Runtime", long_about = None)]
 pub struct Cli {
     #[command(subcommand)]
     pub command: Option<Commands>,
@@ -20,6 +22,14 @@ pub struct Cli {
 
 #[derive(Subcommand)]
 pub enum Commands {
+    /// Launch the interactive AI coding agent harness session (default)
+    Interactive {
+        /// Optional sandbox workspace directory
+        #[arg(short, long)]
+        dir: Option<PathBuf>,
+    },
+    /// Run the interactive API & provider setup wizard
+    Setup,
     /// Launch the TaintBox Desktop Application (starts daemon and opens browser)
     App {
         #[arg(short, long, default_value = "8000")]
@@ -62,7 +72,12 @@ pub enum Commands {
 pub async fn run_cli() -> anyhow::Result<()> {
     let cli = Cli::parse();
 
-    match cli.command.unwrap_or(Commands::App { port: 8000 }) {
+    match cli.command.unwrap_or(Commands::Interactive { dir: None }) {
+        Commands::Interactive { dir } => run_interactive(dir).await,
+        Commands::Setup => {
+            let _ = crate::config::user_config::run_setup_wizard()?;
+            Ok(())
+        }
         Commands::App { port } => run_app(port).await,
         Commands::Daemon { port } => run_daemon(port).await,
         Commands::Run { task, max_steps, dir, api_url, model } => {
@@ -72,6 +87,19 @@ pub async fn run_cli() -> anyhow::Result<()> {
         Commands::Doctor => run_doctor().await,
         Commands::Tui => run_tui_command().await,
     }
+}
+
+async fn run_interactive(dir: Option<PathBuf>) -> anyhow::Result<()> {
+    let config = match crate::config::user_config::UserConfig::load() {
+        Some(cfg) => cfg,
+        None => {
+            println!("\n[!] No active TaintBox configuration found. Starting setup wizard...");
+            crate::config::user_config::run_setup_wizard()?
+        }
+    };
+
+    let mut session = interactive::InteractiveHarness::new(config, dir)?;
+    session.run_loop().await
 }
 
 async fn run_tui_command() -> anyhow::Result<()> {

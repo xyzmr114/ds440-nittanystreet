@@ -6,6 +6,14 @@ description = "A Taint-Tracked Sandbox Runtime and Agent-Computer Interface for 
 authors = ["Group 2 Nittany Street"]
 license = "Unlicense"
 
+[[bin]]
+name = "tbox"
+path = "src/bin/tbox.rs"
+
+[[bin]]
+name = "taintbox"
+path = "src/main.rs"
+
 [dependencies]
 tokio = { version = "1", features = ["full"] }
 axum = { version = "0.7", features = ["macros"] }
