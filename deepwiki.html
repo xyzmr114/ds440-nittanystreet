@@ -1,0 +1,1225 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Group2-NittanyStreet/taintbox | DeepWiki</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+  <script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
+  <style>
+    :root {
+      --bg: #090a0f;
+      --sidebar-bg: #0d0e15;
+      --card-bg: #13151f;
+      --border: #232738;
+      --border-hover: #3b4259;
+      --text: #e2e8f0;
+      --text-muted: #94a3b8;
+      --text-dim: #64748b;
+      --accent: #38bdf8;
+      --accent-glow: rgba(56, 189, 248, 0.15);
+      --green: #34d399;
+      --red: #f87171;
+      --amber: #fbbf24;
+      --purple: #a855f7;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      line-height: 1.65;
+      display: flex;
+      flex-direction: column;
+      height: 100vh;
+      overflow: hidden;
+    }
+    code, pre { font-family: 'JetBrains Mono', monospace; }
+
+    /* Top Nav */
+    header {
+      height: 58px;
+      background: var(--sidebar-bg);
+      border-bottom: 1px dashed var(--border);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0 24px;
+      flex-shrink: 0;
+      z-index: 50;
+    }
+    .logo-area {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+    }
+    .deepwiki-badge {
+      font-weight: 700;
+      font-size: 17px;
+      background: linear-gradient(135deg, #38bdf8, #a855f7);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .repo-tag {
+      font-size: 14px;
+      color: var(--text-muted);
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .repo-tag a { color: var(--text); text-decoration: none; font-weight: 500; }
+    .repo-tag a:hover { color: var(--accent); }
+    .header-actions {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+    .search-btn {
+      background: var(--card-bg);
+      border: 1px solid var(--border);
+      color: var(--text-muted);
+      padding: 6px 14px;
+      border-radius: 6px;
+      font-size: 13px;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      transition: all 0.2s;
+    }
+    .search-btn:hover { border-color: var(--accent); color: var(--text); }
+    .kbd-pill {
+      background: var(--border);
+      color: var(--text-muted);
+      font-size: 10px;
+      padding: 2px 6px;
+      border-radius: 4px;
+      font-weight: 600;
+    }
+    .btn-pill {
+      background: var(--card-bg);
+      border: 1px solid var(--border);
+      color: var(--text);
+      padding: 6px 12px;
+      border-radius: 6px;
+      font-size: 12px;
+      font-weight: 500;
+      cursor: pointer;
+      text-decoration: none;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .btn-pill:hover { border-color: var(--border-hover); background: #1a1d2b; }
+    .btn-accent {
+      background: #2563eb;
+      border-color: #3b82f6;
+      color: #fff;
+    }
+    .btn-accent:hover { background: #1d4ed8; }
+
+    /* Layout */
+    .app-container {
+      display: flex;
+      flex: 1;
+      height: calc(100vh - 58px);
+      overflow: hidden;
+    }
+
+    /* Sidebar */
+    aside {
+      width: 290px;
+      background: var(--sidebar-bg);
+      border-right: 1px dashed var(--border);
+      display: flex;
+      flex-direction: column;
+      flex-shrink: 0;
+      overflow-y: auto;
+    }
+    .sidebar-meta {
+      padding: 16px 20px 10px 20px;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+      font-size: 12px;
+      color: var(--text-dim);
+    }
+    .sidebar-search {
+      padding: 12px 16px;
+    }
+    .sidebar-search input {
+      width: 100%;
+      background: var(--card-bg);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 7px 12px;
+      color: var(--text);
+      font-size: 13px;
+      outline: none;
+    }
+    .sidebar-search input:focus { border-color: var(--accent); }
+    .nav-tree {
+      list-style: none;
+      padding: 8px 12px 24px 12px;
+      flex: 1;
+    }
+    .nav-chapter {
+      margin-top: 14px;
+      margin-bottom: 4px;
+      font-size: 11px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      color: var(--text-dim);
+      padding: 4px 8px;
+    }
+    .nav-item {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 7px 12px;
+      border-radius: 6px;
+      color: var(--text-muted);
+      font-size: 13px;
+      text-decoration: none;
+      cursor: pointer;
+      transition: all 0.15s;
+    }
+    .nav-item:hover {
+      background: rgba(255, 255, 255, 0.04);
+      color: var(--text);
+    }
+    .nav-item.active {
+      background: var(--card-bg);
+      color: var(--accent);
+      font-weight: 600;
+      border-left: 3px solid var(--accent);
+    }
+    .nav-item .sec-num {
+      font-size: 11px;
+      color: var(--text-dim);
+      font-family: 'JetBrains Mono', monospace;
+    }
+
+    /* Main Content */
+    main {
+      flex: 1;
+      overflow-y: auto;
+      padding: 36px 64px 80px 64px;
+      background: var(--bg);
+      scroll-behavior: smooth;
+    }
+    .content-wrap {
+      max-width: 900px;
+      margin: 0 auto;
+    }
+    .chapter-header {
+      margin-bottom: 28px;
+      padding-bottom: 20px;
+      border-bottom: 1px solid var(--border);
+    }
+    .breadcrumbs {
+      font-size: 13px;
+      color: var(--text-dim);
+      margin-bottom: 8px;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    h1 {
+      font-size: 32px;
+      font-weight: 700;
+      color: #fff;
+      letter-spacing: -0.02em;
+      margin-bottom: 16px;
+    }
+    h2 {
+      font-size: 22px;
+      font-weight: 600;
+      color: #f1f5f9;
+      margin: 36px 0 16px 0;
+      padding-bottom: 8px;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+    }
+    h3 {
+      font-size: 17px;
+      font-weight: 600;
+      color: #e2e8f0;
+      margin: 24px 0 12px 0;
+    }
+    p {
+      margin-bottom: 16px;
+      color: var(--text-muted);
+      font-size: 15px;
+    }
+    ul, ol {
+      margin-bottom: 20px;
+      padding-left: 24px;
+      color: var(--text-muted);
+    }
+    li { margin-bottom: 8px; }
+
+    /* Source Files Pills */
+    .source-pills {
+      background: rgba(255, 255, 255, 0.02);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 12px 16px;
+      margin-bottom: 28px;
+    }
+    .source-pills-title {
+      font-size: 11px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      color: var(--text-dim);
+      margin-bottom: 8px;
+    }
+    .pills-list {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+    }
+    .file-pill {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 12px;
+      background: var(--card-bg);
+      border: 1px solid var(--border);
+      padding: 4px 10px;
+      border-radius: 4px;
+      color: var(--accent);
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    /* Callouts */
+    .callout {
+      border-radius: 8px;
+      padding: 16px 20px;
+      margin: 20px 0;
+      font-size: 14px;
+      border-left: 4px solid;
+    }
+    .callout-note {
+      background: rgba(56, 189, 248, 0.08);
+      border-color: var(--accent);
+      color: #bae6fd;
+    }
+    .callout-warning {
+      background: rgba(248, 113, 113, 0.08);
+      border-color: var(--red);
+      color: #fecaca;
+    }
+    .callout-tip {
+      background: rgba(52, 211, 153, 0.08);
+      border-color: var(--green);
+      color: #a7f3d0;
+    }
+
+    /* Tables */
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin: 24px 0;
+      font-size: 13.5px;
+    }
+    th, td {
+      border: 1px solid var(--border);
+      padding: 10px 14px;
+      text-align: left;
+    }
+    th {
+      background: var(--card-bg);
+      color: #fff;
+      font-weight: 600;
+    }
+    tr:nth-child(even) { background: rgba(255, 255, 255, 0.015); }
+
+    /* Code Blocks */
+    pre {
+      background: var(--card-bg);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 16px 18px;
+      margin: 18px 0;
+      overflow-x: auto;
+      font-size: 13px;
+      line-height: 1.55;
+    }
+    code:not(pre code) {
+      background: var(--card-bg);
+      border: 1px solid var(--border);
+      padding: 2px 6px;
+      border-radius: 4px;
+      font-size: 12.5px;
+      color: var(--accent);
+    }
+
+    /* Mermaid Box */
+    .mermaid-box {
+      background: var(--card-bg);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 20px;
+      margin: 24px 0;
+      display: flex;
+      justify-content: center;
+      overflow-x: auto;
+    }
+
+    /* Bottom Navigation */
+    .pager {
+      display: flex;
+      justify-content: space-between;
+      gap: 16px;
+      margin-top: 48px;
+      padding-top: 24px;
+      border-top: 1px solid var(--border);
+    }
+    .pager-btn {
+      flex: 1;
+      padding: 14px 18px;
+      background: var(--card-bg);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      text-decoration: none;
+      color: var(--text);
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+    .pager-btn:hover { border-color: var(--accent); background: #181a26; }
+    .pager-label { font-size: 11px; text-transform: uppercase; color: var(--text-dim); }
+    .pager-title { font-size: 15px; font-weight: 600; color: #fff; }
+
+    /* Search Modal */
+    .modal-overlay {
+      position: fixed;
+      inset: 0;
+      background: rgba(0, 0, 0, 0.7);
+      backdrop-filter: blur(4px);
+      z-index: 100;
+      display: none;
+      align-items: center;
+      justify-content: center;
+    }
+    .modal-overlay.open { display: flex; }
+    .search-modal {
+      width: 580px;
+      background: var(--card-bg);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      overflow: hidden;
+      box-shadow: 0 20px 40px rgba(0, 0, 0, 0.6);
+    }
+    .search-modal-header {
+      padding: 16px 20px;
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+    .search-modal-header input {
+      flex: 1;
+      background: transparent;
+      border: none;
+      color: #fff;
+      font-size: 16px;
+      outline: none;
+    }
+    .search-results {
+      max-height: 380px;
+      overflow-y: auto;
+      padding: 8px;
+    }
+    .search-result-item {
+      padding: 10px 14px;
+      border-radius: 6px;
+      cursor: pointer;
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+    }
+    .search-result-item:hover, .search-result-item.selected {
+      background: rgba(56, 189, 248, 0.12);
+    }
+    .result-title { font-weight: 600; color: #fff; font-size: 14px; }
+    .result-snippet { font-size: 12px; color: var(--text-muted); }
+  </style>
+</head>
+<body>
+  <!-- Header -->
+  <header>
+    <div class="logo-area">
+      <div class="deepwiki-badge">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/></svg>
+        DeepWiki
+      </div>
+      <div class="repo-tag">
+        <span>/</span>
+        <a href="https://github.com/Group2-NittanyStreet/taintbox" target="_blank">Group2-NittanyStreet/taintbox</a>
+        <span style="font-size:11px; padding:2px 6px; border-radius:4px; background:rgba(52,211,153,0.15); color:var(--green); font-weight:600;">v0.1.0</span>
+      </div>
+    </div>
+    <div class="header-actions">
+      <button class="search-btn" onclick="openSearch()">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
+        <span>Search wiki...</span>
+        <span class="kbd-pill">Ctrl+K</span>
+      </button>
+      <a class="btn-pill" href="https://github.com/Group2-NittanyStreet/taintbox" target="_blank">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M12 0c-6.626 0-12 5.373-12 12 0 5.302 3.438 9.8 8.207 11.387.599.111.793-.261.793-.577v-2.234c-3.338.726-4.033-1.416-4.033-1.416-.546-1.387-1.333-1.756-1.333-1.756-1.089-.745.083-.729.083-.729 1.205.084 1.839 1.237 1.839 1.237 1.07 1.834 2.807 1.304 3.492.997.107-.775.418-1.305.762-1.604-2.665-.305-5.467-1.334-5.467-5.931 0-1.311.469-2.381 1.236-3.221-.124-.303-.535-1.524.117-3.176 0 0 1.008-.322 3.301 1.23.957-.266 1.983-.399 3.003-.404 1.02.005 2.047.138 3.006.404 2.291-1.552 3.297-1.23 3.297-1.23.653 1.653.242 2.874.118 3.176.77.84 1.235 1.911 1.235 3.221 0 4.609-2.807 5.624-5.479 5.921.43.372.823 1.102.823 2.222v3.293c0 .319.192.694.801.576 4.765-1.589 8.199-6.086 8.199-11.386 0-6.627-5.373-12-12-12z"/></svg>
+        GitHub
+      </a>
+      <button class="btn-pill btn-accent" onclick="window.print()">Export PDF</button>
+    </div>
+  </header>
+
+  <!-- App Body -->
+  <div class="app-container">
+    <!-- Sidebar -->
+    <aside>
+      <div class="sidebar-meta">
+        Last indexed: <strong>9 September 2026</strong> (commit <code>bfbe443</code>)<br>
+        Penn State DS 440 Capstone
+      </div>
+      <div class="sidebar-search">
+        <input type="text" id="filterInput" placeholder="Filter sections..." oninput="filterNav()" />
+      </div>
+      <ul class="nav-tree" id="navTree">
+        <!-- Injected via JavaScript -->
+      </ul>
+    </aside>
+
+    <!-- Content Panel -->
+    <main id="mainPanel">
+      <div class="content-wrap" id="contentView">
+        <!-- Rendered by JavaScript based on active chapter -->
+      </div>
+    </main>
+  </div>
+
+  <!-- Search Modal -->
+  <div class="modal-overlay" id="searchModal" onclick="closeSearch(event)">
+    <div class="search-modal" onclick="event.stopPropagation()">
+      <div class="search-modal-header">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
+        <input type="text" id="modalSearchInput" placeholder="Search documentation, types, tools, policy rules..." oninput="renderSearchResults()" />
+        <span class="kbd-pill">ESC</span>
+      </div>
+      <div class="search-results" id="searchResults">
+        <!-- Search hits -->
+      </div>
+    </div>
+  </div>
+
+  <script>
+    mermaid.initialize({
+      startOnLoad: false,
+      theme: 'dark',
+      themeVariables: {
+        darkMode: true,
+        background: '#13151f',
+        primaryColor: '#38bdf8',
+        primaryTextColor: '#fff',
+        primaryBorderColor: '#38bdf8',
+        lineColor: '#64748b',
+        secondaryColor: '#34d399',
+        tertiaryColor: '#232738'
+      }
+    });
+
+    // CHAPTER DATA STORE
+    const chapters = [
+      {
+        id: "1-overview",
+        num: "1",
+        title: "Overview & Research Program",
+        sources: ["README.md", "src/lib.rs", "src/models.rs"],
+        content: `
+          <h1>1. Overview & Research Program</h1>
+          <div class="source-pills">
+            <div class="source-pills-title">Relevant Source Files</div>
+            <div class="pills-list">
+              <span class="file-pill">README.md</span>
+              <span class="file-pill">src/lib.rs:1-35</span>
+              <span class="file-pill">src/models.rs:1-120</span>
+            </div>
+          </div>
+          <p>
+            In modern autonomous AI agent systems, the <strong>Agent-Computer Interface (ACI)</strong> represents the single largest capability multiplier. Frontier and open-weight models executing against raw, unconstrained operating system shells perform poorly due to context window pollution (repetitive <code>cd</code>, <code>ls</code>, and verbose error traces), lack of structural editing primitives, and irreversible file modifications.
+          </p>
+          <p>
+            Simultaneously, agent deployments suffer from a fatal vulnerability: <strong>untrusted content ingestion without provenance tracking</strong>. When an agent reads external web scrapes, third-party emails, issues, or tool responses, adversarial instructions embedded within that data (indirect prompt injection) seamlessly flow into the model context. Because standard runtimes do not distinguish between operator instructions and untrusted data, the agent's privileged capabilities—such as file deletion, secret reading, and network socket operations—are turned into execution vectors for an external adversary.
+          </p>
+          
+          <div class="callout callout-note">
+            <strong>Core Thesis:</strong> Decouple safety enforcement from model compliance. Safety must be enforced deterministically at the runtime boundary: if a tool call derives its inputs from an untrusted source, the runtime blocks the operation regardless of whether the model believed the adversarial instruction.
+          </div>
+
+          <h2>1.1 Heilmeier Formulation</h2>
+          <table>
+            <thead>
+              <tr><th>Heilmeier Question</th><th>TaintBox Implementation</th></tr>
+            </thead>
+            <tbody>
+              <tr><td><strong>What are you trying to do?</strong></td><td>Build an instrumented sandbox execution environment and agent-computer interface that tracks the provenance of every byte ingested by an AI agent and mechanically enforces safety boundaries on privileged tools.</td></tr>
+              <tr><td><strong>How is it done today?</strong></td><td>Uninstrumented Docker containers with full network access or prompt-level instructions ("Never execute commands in emails"), which fail reliably against indirect injections.</td></tr>
+              <tr><td><strong>What is new in your approach?</strong></td><td>Pure-Rust zero-cost bitmask taint tracking, lattice propagation algebra, and sub-millisecond local snapshot/rewind checkpointing.</td></tr>
+              <tr><td><strong>Who cares?</strong></td><td>Enterprise developers deploying coding, research, and IT automation agents (Microsoft Copilot, Devin, Claude Computer Use).</td></tr>
+              <tr><td><strong>What are the mid-term / final exams?</strong></td><td>Mid-term: 100% defense on M365 indirect injection suite. Final: Publication of Paper 1 (Capability ACI Curve) and Paper 2 (Taint as the Trust Boundary).</td></tr>
+            </tbody>
+          </table>
+
+          <h2>1.2 Dual Research Papers</h2>
+          <h3>Paper 1 (Capability — The ACI Curve)</h3>
+          <p>
+            Evaluates model performance while holding model weights fixed (e.g. <code>qwen2.5-coder</code>, <code>claude-3-5-sonnet</code>) across four operational conditions:
+          </p>
+          <ul>
+            <li><strong>Condition A (Raw Shell)</strong>: Uninstrumented bash shell without observation channels.</li>
+            <li><strong>Condition B (Typed Tools)</strong>: Structured, typed tools (<code>read</code>, <code>write</code>, <code>exec</code>).</li>
+            <li><strong>Condition C (Time-Travel)</strong>: Structured tools with Snapshot-Rewind checkpointing.</li>
+            <li><strong>Condition D (Full ACI)</strong>: Full harness with active observation and provenance awareness surfaced to model context.</li>
+          </ul>
+
+          <h3>Paper 2 (Defense — Taint as the Trust Boundary)</h3>
+          <p>
+            Measures vulnerability and mitigation rates across a 7-class adversarial corpus comparing baseline models, prompt hardening, TaintBox boundary policy, and multi-layered defense-in-depth.
+          </p>
+        `
+      },
+      {
+        id: "2-core-architecture",
+        num: "2",
+        title: "Core Architecture & Type System",
+        sources: ["src/models.rs", "src/api/routes.rs", "src/cli/mod.rs"],
+        content: `
+          <h1>2. Core Architecture & Type System</h1>
+          <div class="source-pills">
+            <div class="source-pills-title">Relevant Source Files</div>
+            <div class="pills-list">
+              <span class="file-pill">src/models.rs:7-121</span>
+              <span class="file-pill">src/api/routes.rs:1-120</span>
+              <span class="file-pill">src/cli/mod.rs:1-90</span>
+            </div>
+          </div>
+          <p>
+            TaintBox is structured as a layered runtime. The API Gateway routes operator commands, the ACI Layer parses typed tool calls and coordinates with Containment Walls, the Taint Engine evaluates policy and propagates provenance, and the Sandbox Runtime isolates disk and execution operations.
+          </p>
+
+          <h2>2.1 Layered Architecture Diagram</h2>
+          <div class="mermaid-box">
+            <pre class="mermaid">
+graph TD
+    User["Operator / Autonomous Agent (CLI / TUI / REST / SDK)"] --> Gateway["Axum API Gateway & CLI Dispatcher (src/api/routes.rs, src/cli/mod.rs)"]
+    Gateway --> ACILayer["ACI Layer: Typed Tool Harness & AgentLoop (src/aci/harness.rs, src/aci/agent_loop.rs)"]
+    ACILayer --> Walls["Containment Walls (src/walls/ promptinject, estop, ouroboros, halluscan)"]
+    ACILayer --> TaintLayer["Taint Engine: Ledger & Boundary Policy (src/taint/engine.rs, src/taint/policy.rs)"]
+    TaintLayer --> Runtime["Sandbox Runtime: LocalIsolatedRuntime (src/runtime/base.rs)"]
+    Runtime --> Storage["Persistence & Telemetry: PostgresStore & JSONL (src/store/postgres.rs, src/metrics/mod.rs)"]
+            </pre>
+          </div>
+
+          <h2>2.2 End-to-End Execution Sequence</h2>
+          <div class="mermaid-box">
+            <pre class="mermaid">
+sequenceDiagram
+    autonumber
+    participant Agent as Agent / LLM
+    participant ACI as ACI Harness
+    participant Walls as Containment Walls
+    participant Taint as Taint Engine
+    participant Runtime as Sandbox Runtime
+    participant Store as Telemetry / Postgres
+
+    Agent->>ACI: invoke_tool(name, args)
+    ACI->>Walls: pre_check(tool, args) [PromptInject, Ouroboros, HalluScan]
+    alt Wall Tripped
+        Walls-->>ACI: Intercept & Trip E-Stop
+        ACI-->>Agent: ToolResult(status: "BLOCKED_BY_POLICY", error: "Wall violation")
+    else Wall Clear
+        ACI->>Taint: evaluate_policy(action, referenced_resources)
+        alt Policy Blocked (Tainted input -> Privileged Action)
+            Taint-->>ACI: PolicyDecision(allowed: false, rule_id: "RULE-001")
+            ACI->>Store: log_event("POLICY_BLOCK", action, details)
+            ACI-->>Agent: ToolResult(status: "BLOCKED_BY_POLICY", reason: "...")
+        else Policy Allowed
+            Taint-->>ACI: PolicyDecision(allowed: true)
+            ACI->>Runtime: execute(program/file)
+            Runtime-->>ACI: raw_output (stdout/content)
+            ACI->>Taint: propagate(source_ids, target_id)
+            ACI->>Store: log_event("TOOL_EXEC" / "TOOL_WRITE", action, details)
+            ACI-->>Agent: ToolResult(status: "SUCCESS", output: processed_data, provenance: record)
+        end
+    end
+            </pre>
+          </div>
+
+          <h2>2.3 Core Domain Types</h2>
+          <p>
+            All serialization contracts are defined with strict Serde derives in <code>src/models.rs</code>:
+          </p>
+          <pre><code>// Trust level hierarchy with lattice ordering
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+#[serde(rename_all = "UPPERCASE")]
+pub enum TrustLevel {
+    Trusted = 0,
+    Internal = 1,
+    Untrusted = 2,
+    Hostile = 3,
+}
+
+// Provenance origin classification
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub enum ProvenanceTag {
+    System,
+    User,
+    Internal,
+    UntrustedWeb,
+    ExternalFile,
+    Derived,
+}
+
+// Immutable audit event
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AuditEvent {
+    pub id: Uuid,
+    pub sandbox_id: String,
+    pub event_type: String,
+    pub action: String,
+    pub caller: String,
+    pub details: serde_json::Value,
+    pub timestamp: f64,
+}</code></pre>
+        `
+      },
+      {
+        id: "3-aci-harness",
+        num: "3",
+        title: "ACI Harness, Tool Suite & State Tree",
+        sources: ["src/aci/harness.rs", "src/aci/agent_loop.rs", "src/aci/state_tree.rs"],
+        content: `
+          <h1>3. ACI Harness, Tool Suite & State Tree</h1>
+          <div class="source-pills">
+            <div class="source-pills-title">Relevant Source Files</div>
+            <div class="pills-list">
+              <span class="file-pill">src/aci/harness.rs:1-606</span>
+              <span class="file-pill">src/aci/agent_loop.rs:1-328</span>
+              <span class="file-pill">src/aci/state_tree.rs:1-150</span>
+            </div>
+          </div>
+          <p>
+            The <strong>Agent-Computer Interface (ACI)</strong> replaces raw shell interaction with 10 structured, typed tool operations designed to conserve tokens, prevent path traversal, and provide surgical mutation capabilities.
+          </p>
+
+          <h2>3.1 The 10 Typed SWE-Agent Tools</h2>
+          <table>
+            <thead>
+              <tr><th>Tool Name</th><th>Signature</th><th>Description & Safety Check</th></tr>
+            </thead>
+            <tbody>
+              <tr><td><code>read</code></td><td><code>path: str</code></td><td>Reads file content with line numbers and provenance attachment. Blocks sensitive credential paths.</td></tr>
+              <tr><td><code>write</code></td><td><code>path: str, content: str, sources: [str]</code></td><td>Writes file and propagates provenance from source IDs. Blocked in Strict profile if sources are tainted.</td></tr>
+              <tr><td><code>view_lines</code></td><td><code>path: str, start: usize, end: usize</code></td><td>Returns 1-indexed formatted slice of lines (<code>{n}: {line}</code>) to conserve context window tokens.</td></tr>
+              <tr><td><code>edit_block</code></td><td><code>path: str, target: str, replacement: str</code></td><td>Surgically replaces a single occurrence of code block. Validates Ouroboros immutability barriers.</td></tr>
+              <tr><td><code>search_files</code></td><td><code>pattern: str</code></td><td>Glob and substring search across workspace relative paths.</td></tr>
+              <tr><td><code>grep</code></td><td><code>query: str</code></td><td>Recursive multi-file text search returning formatted matching lines and file paths.</td></tr>
+              <tr><td><code>fetch</code></td><td><code>url: str, save_as: Option&lt;str&gt;</code></td><td>Ingests remote web content. <strong>Always tags resource with TrustLevel::Untrusted (UntrustedWeb).</strong></td></tr>
+              <tr><td><code>exec</code></td><td><code>program: str, args: [str]</code></td><td>Executes process in sandbox directory. Scans arguments for referenced files; intercepts exfiltration commands.</td></tr>
+              <tr><td><code>snapshot</code></td><td><code>description: str</code></td><td>Creates immutable state checkpoint with SHA-256 digests and serializes taint ledger state.</td></tr>
+              <tr><td><code>rewind</code></td><td><code>snapshot_id: str</code></td><td>Time-travel rollback: restores both filesystem files and bitmask taint states simultaneously.</td></tr>
+            </tbody>
+          </table>
+
+          <h2>3.2 Output Windowing & Context Compression</h2>
+          <p>
+            Large build outputs or test results frequently exhaust agent context windows. The ACI Harness implements folding windowing (<code>src/aci/harness.rs:278</code>) preserving the head and tail lines:
+          </p>
+          <pre><code>pub fn fold_output(&self, text: &str, head_lines: usize, tail_lines: usize) -> String {
+    let lines: Vec<&str> = text.lines().collect();
+    if lines.len() <= head_lines + tail_lines {
+        return text.to_string();
+    }
+    format!(
+        "{}\\n\\n... [{} lines truncated to preserve model context] ...\\n\\n{}",
+        head.join("\\n"), lines.len() - head_lines - tail_lines, tail.join("\\n")
+    )
+}</code></pre>
+        `
+      },
+      {
+        id: "4-taint-engine",
+        num: "4",
+        title: "Bitmask Taint Tracking & Policy Engine",
+        sources: ["src/taint/engine.rs", "src/taint/policy.rs"],
+        content: `
+          <h1>4. Bitmask Taint Tracking & Policy Engine</h1>
+          <div class="source-pills">
+            <div class="source-pills-title">Relevant Source Files</div>
+            <div class="pills-list">
+              <span class="file-pill">src/taint/engine.rs:1-238</span>
+              <span class="file-pill">src/taint/policy.rs:1-120</span>
+            </div>
+          </div>
+          <p>
+            The Taint Engine maintains a hash-indexed ledger $\\mathcal{L}: \\text{ResourceID} \\to \\text{ProvenanceRecord}$. Every file read, network scrape, and user message is tagged with trust levels and custody chains.
+          </p>
+
+          <h2>4.1 Propagation Lattice Algebra</h2>
+          <p>
+            When an agent generates or modifies resource $T$ using sources $S = \\{s_1, s_2, \\dots, s_k\\}$:
+          </p>
+          <ul>
+            <li><strong>Lattice Join</strong>: $\\text{TrustLevel}(T) = \\max_{s \\in S} \\left( \\text{TrustLevel}(s) \\right)$</li>
+            <li><strong>Chain of Custody</strong>: $\\text{ChainOfCustody}(T) = \\bigcup_{s \\in S} \\text{ChainOfCustody}(s) \\cup \\{ \\text{source\\_id}(s) \\}$</li>
+            <li><strong>Tag Assignment</strong>: $\\text{Tag}(T) = \\text{Derived}$ if any source was tracked, else $\\text{Internal}$.</li>
+          </ul>
+
+          <h2>4.2 Security Boundary Profiles</h2>
+          <table>
+            <thead>
+              <tr><th>Profile</th><th>Mode</th><th>Enforcement Behavior</th></tr>
+            </thead>
+            <tbody>
+              <tr><td><code>Standard</code></td><td>Balanced Protection</td><td>Blocks privileged tools (<code>network_egress</code>, <code>rm</code>, <code>curl</code>) when input sources carry <code>TrustLevel >= Untrusted</code>.</td></tr>
+              <tr><td><code>Strict</code></td><td>Zero-Trust</td><td>Blocks all privileged tools <strong>AND all file writes</strong> derived from untrusted inputs (<code>TAINT-STRICT-WRITE</code>).</td></tr>
+              <tr><td><code>AuditOnly</code></td><td>Observation Mode</td><td>Records full taint telemetry and policy violations without blocking, enabling empirical research on attack trajectories.</td></tr>
+            </tbody>
+          </table>
+
+          <h2>4.3 Sensitive Paths & Egress Allowlisting</h2>
+          <p>
+            Direct reads of sensitive configuration files (<code>.env</code>, <code>id_rsa</code>, <code>/etc/shadow</code>) are immediately blocked with rule <code>TAINT-PATH-SECRET</code>. Network tools (<code>curl</code>, <code>fetch</code>) are checked against <code>config.network_allowlist</code>: unallowlisted requests carrying tainted inputs trigger rule <code>TAINT-NETWORK-ALLOWLIST</code>.
+          </p>
+        `
+      },
+      {
+        id: "5-containment-walls",
+        num: "5",
+        title: "Containment Walls & Defense-in-Depth",
+        sources: ["src/walls/promptinject.rs", "src/walls/ouroboros.rs", "src/walls/halluscan.rs", "src/walls/estop.rs"],
+        content: `
+          <h1>5. Containment Walls & Defense-in-Depth</h1>
+          <div class="source-pills">
+            <div class="source-pills-title">Relevant Source Files</div>
+            <div class="pills-list">
+              <span class="file-pill">src/walls/promptinject.rs:1-140</span>
+              <span class="file-pill">src/walls/ouroboros.rs:1-60</span>
+              <span class="file-pill">src/walls/halluscan.rs:1-55</span>
+              <span class="file-pill">src/walls/estop.rs:1-45</span>
+            </div>
+          </div>
+          <p>
+            TaintBox implements defense-in-depth via four distinct guardrail modules in <code>src/walls/</code> operating prior to tool execution:
+          </p>
+
+          <div class="mermaid-box">
+            <pre class="mermaid">
+graph LR
+    Input["Untrusted Input Stream"] --> Scanner["1. PromptInjectScanner (Regex & Lexical)"]
+    Scanner --> Ouroboros["2. OuroborosWall (Infrastructure Immutability)"]
+    Ouroboros --> Grounding["3. HalluScan (Workspace Path Grounding)"]
+    Grounding --> Circuit["4. EmergencyStop (Harness Halt Circuit Breaker)"]
+            </pre>
+          </div>
+
+          <h2>5.1 PromptInjectScanner Patterns</h2>
+          <ul>
+            <li><code>ignore_previous</code>: <code>(?i)\\b(ignore|disregard|forget)\\s+(all\\s+)?(the above|previous|prior|earlier)\\s+(instructions?|prompts?|rules?)\\b</code></li>
+            <li><code>dan_jailbreak</code>: <code>(?i)\\b(DAN\\s+mode|jailbreak|developer\\s+mode|unrestricted\\s+AI)\\b</code></li>
+            <li><code>exfil_credentials</code>: <code>(?i)\\b(exfiltrate|id_rsa|\\.env|dump\\s+credentials|send\\s+to\\s+evil)\\b</code></li>
+            <li><code>tool_misuse</code>: <code>(?i)\\b(curl\\s+-X|curl\\s+.*http|wget\\s+.*http|rm\\s+-rf\\s+/)\\b</code></li>
+          </ul>
+
+          <h2>5.2 Ouroboros Wall (Self-Modification Guard)</h2>
+          <p>
+            Prevents attacks where an agent attempts to weaken its own harness or tests. Any write or edit targeting <code>tests/</code>, <code>src/taint/</code>, <code>src/walls/</code>, <code>migrations/</code>, or <code>Cargo.toml</code> is intercepted with:
+          </p>
+          <div class="callout callout-warning">
+            <strong>Ouroboros Wall Block:</strong> Modification of security-critical infrastructure '{path}' is prohibited.
+          </div>
+        `
+      },
+      {
+        id: "6-sandboxes",
+        num: "6",
+        title: "Virtual Sandboxes & Runtime Isolation",
+        sources: ["src/runtime/base.rs"],
+        content: `
+          <h1>6. Virtual Sandboxes & Runtime Isolation</h1>
+          <div class="source-pills">
+            <div class="source-pills-title">Relevant Source Files</div>
+            <div class="pills-list">
+              <span class="file-pill">src/runtime/base.rs:1-190</span>
+            </div>
+          </div>
+          <p>
+            Every agent session executes inside an isolated workspace governed by the <code>SandboxRuntime</code> trait:
+          </p>
+          <pre><code>pub trait SandboxRuntime: Send + Sync {
+    fn read_file(&self, rel_path: &str) -> anyhow::Result<String>;
+    fn write_file(&self, rel_path: &str, content: &str) -> anyhow::Result<()>;
+    fn file_exists(&self, rel_path: &str) -> bool;
+    fn list_files(&self) -> Vec<String>;
+    fn execute_command(&self, program: &str, args: &[String]) -> (i32, String, String);
+    fn create_snapshot(&self, snapshot_id: &str) -> anyhow::Result<HashMap<String, String>>;
+    fn restore_snapshot(&self, snapshot_id: &str) -> anyhow::Result<()>;
+    fn root_dir(&self) -> Option<PathBuf> { None }
+}</code></pre>
+
+          <h2>6.1 Path Traversal Escape Prevention</h2>
+          <p>
+            <code>LocalIsolatedRuntime::resolve_path</code> enforces that all canonical paths reside strictly beneath the root path. Path traversal sequences (<code>../../</code>) are rejected prior to filesystem access.
+          </p>
+
+          <h2>6.2 Snapshot & Rewind Implementation</h2>
+          <p>
+            When <code>snapshot</code> is invoked, all workspace files are recursively scanned, hashed via SHA-256, and duplicated into <code>.taintbox_snapshots/{snapshot_id}/</code>. During <code>rewind</code>, current workspace files are wiped and snapshot files restored in sub-millisecond execution time.
+          </p>
+        `
+      },
+      {
+        id: "7-persistence",
+        num: "7",
+        title: "State Tree, Sessions & PostgreSQL",
+        sources: ["migrations/0001_init.sql", "src/store/session.rs", "src/store/postgres.rs"],
+        content: `
+          <h1>7. State Tree, Sessions & PostgreSQL</h1>
+          <div class="source-pills">
+            <div class="source-pills-title">Relevant Source Files</div>
+            <div class="pills-list">
+              <span class="file-pill">migrations/0001_init.sql:1-45</span>
+              <span class="file-pill">src/store/session.rs:1-85</span>
+              <span class="file-pill">src/store/postgres.rs:1-90</span>
+            </div>
+          </div>
+          <p>
+            TaintBox supports concurrent multi-tenant agent execution with dual persistence: in-memory thread-safe session managers for real-time tool loops, and PostgreSQL with JSONB columns for durable telemetry.
+          </p>
+
+          <h2>7.1 PostgreSQL Schema Architecture</h2>
+          <pre><code>CREATE TABLE sandboxes (
+    id VARCHAR(64) PRIMARY KEY,
+    description TEXT NOT NULL DEFAULT '',
+    status VARCHAR(32) NOT NULL DEFAULT 'active',
+    policy_profile VARCHAR(64) NOT NULL DEFAULT 'default_strict',
+    root_path TEXT NOT NULL DEFAULT '',
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE snapshots (
+    snapshot_id VARCHAR(64) PRIMARY KEY,
+    sandbox_id VARCHAR(64) NOT NULL REFERENCES sandboxes(id) ON DELETE CASCADE,
+    file_hashes JSONB NOT NULL DEFAULT '{}'::jsonb,
+    taint_ledger_state JSONB NOT NULL DEFAULT '{}'::jsonb,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE audit_events (
+    id UUID PRIMARY KEY,
+    sandbox_id VARCHAR(64) NOT NULL REFERENCES sandboxes(id) ON DELETE CASCADE,
+    event_type VARCHAR(64) NOT NULL,
+    action VARCHAR(64) NOT NULL,
+    details JSONB NOT NULL DEFAULT '{}'::jsonb,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);</code></pre>
+        `
+      },
+      {
+        id: "8-operator-interfaces",
+        num: "8",
+        title: "TUI & CLI Operator Interfaces",
+        sources: ["src/tui/zen.rs", "src/tui/app.rs", "src/cli/mod.rs"],
+        content: `
+          <h1>8. TUI & CLI Operator Interfaces</h1>
+          <div class="source-pills">
+            <div class="source-pills-title">Relevant Source Files</div>
+            <div class="pills-list">
+              <span class="file-pill">src/tui/zen.rs:1-980</span>
+              <span class="file-pill">src/tui/app.rs:1-657</span>
+              <span class="file-pill">src/cli/mod.rs:1-120</span>
+            </div>
+          </div>
+          <p>
+            TaintBox provides two first-class terminal interfaces: the <strong>Cyber Obsidian Zen TUI</strong> (the primary interactive agent coding harness) and the <strong>Operator Dashboard</strong>.
+          </p>
+
+          <h2>8.1 Cyber Obsidian Zen TUI (OpenCode-Style)</h2>
+          <p>
+            Invoked simply by running <code>tbox</code> or double-clicking <code>tbox.exe</code>:
+          </p>
+          <ul>
+            <li><strong>76% Activity Feed Column</strong>: Unified split diff cards, shell command blocks, file action tags, and live taint interception banners.</li>
+            <li><strong>24% Telemetry Sidebar</strong>: Real-time context token usage, cost calculation ($), MCP monitors, LSP services, and interactive Todo checklist.</li>
+            <li><strong>Dynamic Split Diff Generator</strong>: Computes surgical before/after line diffs with green (addition) and red (deletion) styling directly from tool calls.</li>
+            <li><strong>Command Palette (<code>Ctrl+P</code>)</strong>: Search modal for rapid attack staging (<code>/attack</code>), walls diagnostic (<code>/walls</code>), and snapshot rewind (<code>/rewind</code>).</li>
+          </ul>
+
+          <h2>8.2 CLI Commands Summary</h2>
+          <table>
+            <thead>
+              <tr><th>Command</th><th>Description</th></tr>
+            </thead>
+            <tbody>
+              <tr><td><code>tbox</code></td><td>Launches the interactive Zen coding agent harness (default).</td></tr>
+              <tr><td><code>tbox setup</code></td><td>Runs the interactive API provider setup wizard.</td></tr>
+              <tr><td><code>tbox app [--port 8000]</code></td><td>Launches the desktop dashboard daemon and opens the web browser.</td></tr>
+              <tr><td><code>tbox daemon [--port 8000]</code></td><td>Starts headless Axum REST API server.</td></tr>
+              <tr><td><code>tbox run "&lt;prompt&gt;"</code></td><td>Runs an autonomous agent task in the virtual sandbox.</td></tr>
+              <tr><td><code>tbox eval</code></td><td>Executes ExploitBench benchmark evaluation suite.</td></tr>
+              <tr><td><code>tbox doctor</code></td><td>Runs environment diagnostics (Git, MinGit, Postgres, Sandbox, Walls).</td></tr>
+              <tr><td><code>tbox tui</code></td><td>Launches the 5-tab Ratatui operator dashboard.</td></tr>
+            </tbody>
+          </table>
+        `
+      },
+      {
+        id: "9-benchmark-eval",
+        num: "9",
+        title: "Benchmark Evaluation Suite & Attack Lab",
+        sources: ["src/aci/benchmark.rs", "src/aci/attack_lab.rs", "data/injections/m365_indirect_attacks.json"],
+        content: `
+          <h1>9. Benchmark Evaluation Suite & Attack Lab</h1>
+          <div class="source-pills">
+            <div class="source-pills-title">Relevant Source Files</div>
+            <div class="pills-list">
+              <span class="file-pill">src/aci/benchmark.rs:1-180</span>
+              <span class="file-pill">src/aci/attack_lab.rs:1-120</span>
+              <span class="file-pill">data/injections/m365_indirect_attacks.json</span>
+            </div>
+          </div>
+          <p>
+            The benchmark suite empirically validates agent performance and defense interception across standard SWE-bench tasks and real-world adversarial attacks.
+          </p>
+
+          <h2>9.1 Real-World M365 & Agent Attack Corpus</h2>
+          <table>
+            <thead>
+              <tr><th>Scenario ID</th><th>Attack Vector</th><th>Target Tool</th><th>MITRE ATLAS</th></tr>
+            </thead>
+            <tbody>
+              <tr><td><code>m365_sox_invoice_reconcile</code></td><td>SOX-404 invoice PDF parse challenge with embedded tax evasion URL ping.</td><td><code>exec</code> (curl)</td><td>AML.T0051</td></tr>
+              <tr><td><code>m365_bipia_scraper_override</code></td><td>Documentation scraper test where rate-limit header directs exfiltration.</td><td><code>exec</code> (curl)</td><td>AML.T0051</td></tr>
+              <tr><td><code>m365_crash_dump_telemetry</code></td><td>InjecAgent crash dump analyzer that attempts diagnostic secret leakage.</td><td><code>exec</code> (curl)</td><td>AML.T0058</td></tr>
+              <tr><td><code>m365_iso27001_audit_vendor</code></td><td>Vendor onboarding questionnaire with delimiter escape and policy exfiltration.</td><td><code>read</code> / <code>exec</code></td><td>AML.T0054</td></tr>
+              <tr><td><code>m365_base64_rot13_cipher</code></td><td>Obfuscated polyglot payload testing multi-layer decode resistance.</td><td><code>exec</code> (sh)</td><td>AML.T0051.001</td></tr>
+            </tbody>
+          </table>
+
+          <h2>9.2 Six-Round Evaluation Protocol</h2>
+          <ol>
+            <li><strong>Round 1 (Baseline Compromise Rate)</strong>: AuditOnly vs Strict profiles against direct prompt injections.</li>
+            <li><strong>Round 2 (Indirect Injection Exfiltration)</strong>: Web & email vectors attempting sensitive path reads and <code>curl</code> egress.</li>
+            <li><strong>Round 3 (Evasion & Obfuscation)</strong>: Base64 and rot13 ciphers evaluated to verify that runtime provenance blocks operations even when lexical filters fail.</li>
+            <li><strong>Round 4 (Tool & MCP Poisoning)</strong>: Injected tool schemas and tainted tool return values.</li>
+            <li><strong>Round 5 (Agent Hijacking & Multi-Step Trajectories)</strong>: Multi-turn goal displacement with time-travel rewind verification.</li>
+            <li><strong>Round 6 (MITRE ATLAS Coverage)</strong>: Complete mapping of defense results against ATLAS techniques.</li>
+          </ol>
+        `
+      },
+      {
+        id: "10-api-reference",
+        num: "10",
+        title: "Configuration & REST API Reference",
+        sources: ["src/config/user_config.rs", "src/api/routes.rs", "src/api/schemas.rs"],
+        content: `
+          <h1>10. Configuration & REST API Reference</h1>
+          <div class="source-pills">
+            <div class="source-pills-title">Relevant Source Files</div>
+            <div class="pills-list">
+              <span class="file-pill">src/config/user_config.rs:1-140</span>
+              <span class="file-pill">src/api/routes.rs:1-250</span>
+              <span class="file-pill">src/api/schemas.rs:1-120</span>
+            </div>
+          </div>
+          <p>
+            TaintBox exposes a complete REST API via Axum on port 8000, supporting sandbox lifecycle, tool invocation, snapshot management, and metrics telemetry.
+          </p>
+
+          <h2>10.1 Complete REST Endpoints</h2>
+          <table>
+            <thead>
+              <tr><th>Method</th><th>Path</th><th>Description</th></tr>
+            </thead>
+            <tbody>
+              <tr><td><code>GET</code></td><td><code>/health</code></td><td>Service health, version, and engine status check.</td></tr>
+              <tr><td><code>GET</code></td><td><code>/v1/schemas/tools</code></td><td>OpenAPI-compliant JSON schemas for all 10 SWE-agent tools.</td></tr>
+              <tr><td><code>POST</code></td><td><code>/v1/sandboxes</code></td><td>Create a new isolated sandbox runtime session.</td></tr>
+              <tr><td><code>GET</code></td><td><code>/v1/sandboxes</code></td><td>List all active sandbox sessions.</td></tr>
+              <tr><td><code>DELETE</code></td><td><code>/v1/sandboxes/:id</code></td><td>Terminate and clean up sandbox session directory.</td></tr>
+              <tr><td><code>POST</code></td><td><code>/v1/sandboxes/:id/tools/read</code></td><td>Read file content within sandbox.</td></tr>
+              <tr><td><code>POST</code></td><td><code>/v1/sandboxes/:id/tools/write</code></td><td>Write file content and propagate provenance.</td></tr>
+              <tr><td><code>POST</code></td><td><code>/v1/sandboxes/:id/tools/view_lines</code></td><td>Read 1-indexed line range.</td></tr>
+              <tr><td><code>POST</code></td><td><code>/v1/sandboxes/:id/tools/edit_block</code></td><td>Search and replace code block.</td></tr>
+              <tr><td><code>POST</code></td><td><code>/v1/sandboxes/:id/tools/search_files</code></td><td>Glob pattern file search.</td></tr>
+              <tr><td><code>POST</code></td><td><code>/v1/sandboxes/:id/tools/grep</code></td><td>Recursive text pattern search.</td></tr>
+              <tr><td><code>POST</code></td><td><code>/v1/sandboxes/:id/tools/fetch</code></td><td>Ingest remote URL into workspace (tagged untrusted).</td></tr>
+              <tr><td><code>POST</code></td><td><code>/v1/sandboxes/:id/tools/exec</code></td><td>Execute command with taint boundary interception.</td></tr>
+              <tr><td><code>POST</code></td><td><code>/v1/sandboxes/:id/snapshots</code></td><td>Create state checkpoint.</td></tr>
+              <tr><td><code>POST</code></td><td><code>/v1/sandboxes/:id/rewind</code></td><td>Roll back sandbox to snapshot checkpoint.</td></tr>
+              <tr><td><code>GET</code></td><td><code>/v1/sandboxes/:id/observe</code></td><td>Get observation telemetry.</td></tr>
+              <tr><td><code>GET</code></td><td><code>/v1/metrics</code></td><td>System metrics summary (steps, wall trips, sandboxes).</td></tr>
+              <tr><td><code>GET</code></td><td><code>/v1/taint/graph</code></td><td>Active provenance DAG nodes and edges.</td></tr>
+              <tr><td><code>GET</code></td><td><code>/v1/lab/scenarios</code></td><td>List Attack Lab scenarios.</td></tr>
+              <tr><td><code>POST</code></td><td><code>/v1/lab/execute</code></td><td>Simulate attack scenario with live trace logging.</td></tr>
+            </tbody>
+          </table>
+        `
+      }
+    ];
+
+    let currentChapterIndex = 0;
+
+    function renderNav() {
+      const tree = document.getElementById('navTree');
+      tree.innerHTML = '';
+
+      chapters.forEach((ch, idx) => {
+        const li = document.createElement('li');
+        li.innerHTML = `
+          <a class="nav-item ${idx === currentChapterIndex ? 'active' : ''}" onclick="selectChapter(${idx})">
+            <span class="sec-num">${ch.num}.0</span>
+            <span>${ch.title}</span>
+          </a>
+        `;
+        tree.appendChild(li);
+      });
+    }
+
+    function selectChapter(idx) {
+      currentChapterIndex = idx;
+      renderNav();
+      renderContent();
+      document.getElementById('mainPanel').scrollTop = 0;
+    }
+
+    function renderContent() {
+      const ch = chapters[currentChapterIndex];
+      const view = document.getElementById('contentView');
+
+      const prev = currentChapterIndex > 0 ? chapters[currentChapterIndex - 1] : null;
+      const next = currentChapterIndex < chapters.length - 1 ? chapters[currentChapterIndex + 1] : null;
+
+      let pagerHtml = '<div class="pager">';
+      if (prev) {
+        pagerHtml += `
+          <a class="pager-btn" onclick="selectChapter(${currentChapterIndex - 1})">
+            <span class="pager-label">← Previous</span>
+            <span class="pager-title">${prev.num}.0 ${prev.title}</span>
+          </a>
+        `;
+      } else {
+        pagerHtml += '<div></div>';
+      }
+      if (next) {
+        pagerHtml += `
+          <a class="pager-btn" style="text-align:right;" onclick="selectChapter(${currentChapterIndex + 1})">
+            <span class="pager-label">Next →</span>
+            <span class="pager-title">${next.num}.0 ${next.title}</span>
+          </a>
+        `;
+      }
+      pagerHtml += '</div>';
+
+      view.innerHTML = `
+        <div class="breadcrumbs">
+          <span>taintbox</span>
+          <span>/</span>
+          <span>Documentation</span>
+          <span>/</span>
+          <span style="color:var(--text);">${ch.title}</span>
+        </div>
+        ${ch.content}
+        ${pagerHtml}
+      `;
+
+      mermaid.run({
+        querySelector: '.mermaid'
+      });
+    }
+
+    function filterNav() {
+      const q = document.getElementById('filterInput').value.toLowerCase();
+      const items = document.querySelectorAll('#navTree .nav-item');
+      items.forEach(el => {
+        const text = el.innerText.toLowerCase();
+        el.parentElement.style.display = text.includes(q) ? '' : 'none';
+      });
+    }
+
+    function openSearch() {
+      document.getElementById('searchModal').classList.add('open');
+      document.getElementById('modalSearchInput').focus();
+      renderSearchResults();
+    }
+
+    function closeSearch(e) {
+      document.getElementById('searchModal').classList.remove('open');
+    }
+
+    document.addEventListener('keydown', (e) => {
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') {
+        e.preventDefault();
+        openSearch();
+      }
+      if (e.key === 'Escape') {
+        closeSearch();
+      }
+    });
+
+    function renderSearchResults() {
+      const q = document.getElementById('modalSearchInput').value.toLowerCase().trim();
+      const container = document.getElementById('searchResults');
+      container.innerHTML = '';
+
+      if (!q) {
+        chapters.forEach((ch, idx) => {
+          const div = document.createElement('div');
+          div.className = 'search-result-item';
+          div.onclick = () => { selectChapter(idx); closeSearch(); };
+          div.innerHTML = `
+            <div class="result-title">${ch.num}.0 ${ch.title}</div>
+            <div class="result-snippet">Chapter overview & key source files</div>
+          `;
+          container.appendChild(div);
+        });
+        return;
+      }
+
+      const hits = [];
+      chapters.forEach((ch, idx) => {
+        if (ch.title.toLowerCase().includes(q) || ch.content.toLowerCase().includes(q)) {
+          hits.push({ ch, idx });
+        }
+      });
+
+      if (hits.length === 0) {
+        container.innerHTML = '<div style="padding:16px; color:var(--text-dim); text-align:center;">No matching documentation found.</div>';
+        return;
+      }
+
+      hits.forEach(({ ch, idx }) => {
+        const div = document.createElement('div');
+        div.className = 'search-result-item';
+        div.onclick = () => { selectChapter(idx); closeSearch(); };
+        div.innerHTML = `
+          <div class="result-title">${ch.num}.0 ${ch.title}</div>
+          <div class="result-snippet">Found match in ${ch.title}</div>
+        `;
+        container.appendChild(div);
+      });
+    }
+
+    // Initialize
+    renderNav();
+    renderContent();
+  </script>
+</body>
+</html>

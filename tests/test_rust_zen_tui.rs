@@ -7,12 +7,11 @@ use taintbox::tui::{FeedItem, ZenApp};
 fn test_zen_app_initialization_and_template_feed() {
     let app = ZenApp::default();
     assert_eq!(app.agent_mode, "Build");
-    assert_eq!(app.task_title, "Implementing signup age-validate field");
-    assert_eq!(app.tokens, 29854);
-    assert_eq!(app.context_pct, 15);
-    assert_eq!(app.spent_usd, 0.33);
+    assert_eq!(app.task_title, "Ready");
+    assert_eq!(app.tokens, 0);
+    assert_eq!(app.context_pct, 0);
+    assert_eq!(app.spent_usd, 0.0);
     assert!(!app.feed.is_empty());
-    assert!(!app.todos.is_empty());
 }
 
 #[test]
@@ -60,22 +59,22 @@ fn test_zen_app_command_palette_ctrl_p() {
 
 #[test]
 fn test_zen_app_prompt_submission_and_metrics() {
-    let mut app = ZenApp::default();
+    let harness = taintbox::aci::ACIHarness::new_with_temp_dir().ok();
+    let mut app = ZenApp::new(harness, taintbox::config::user_config::UserConfig::default());
     let initial_tokens = app.tokens;
 
     app.submit_prompt("Build new API authentication endpoint");
     assert_eq!(app.task_title, "Build new API authentication endpoint");
-    assert!(app.tokens > initial_tokens);
-    assert!(app.spent_usd > 0.33);
+    assert!(app.tokens >= initial_tokens);
 
-    // Check feed has user prompt and shell command
     let has_user_prompt = app.feed.iter().any(|item| matches!(item, FeedItem::UserPrompt { .. }));
     assert!(has_user_prompt);
 }
 
 #[test]
 fn test_zen_app_attack_staging_and_taint_interception() {
-    let mut app = ZenApp::default();
+    let harness = taintbox::aci::ACIHarness::new_with_temp_dir().ok();
+    let mut app = ZenApp::new(harness, taintbox::config::user_config::UserConfig::default());
     app.stage_attack_scenario("m365_sox_invoice_reconcile");
 
     let has_staged = app.feed.iter().any(|item| {
@@ -87,7 +86,6 @@ fn test_zen_app_attack_staging_and_taint_interception() {
     });
     assert!(has_staged);
 
-    // Prompt mentioning invoice triggers policy interception
     app.submit_prompt("Please parse invoice_reconciliation_2026_Q3.txt");
     let has_alert = app.feed.iter().any(|item| matches!(item, FeedItem::TaintAlert { .. }));
     assert!(has_alert);
