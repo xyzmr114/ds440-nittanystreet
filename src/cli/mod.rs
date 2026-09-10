@@ -20,6 +20,11 @@ pub struct Cli {
 
 #[derive(Subcommand)]
 pub enum Commands {
+    /// Launch the TaintBox Desktop Application (starts daemon and opens browser)
+    App {
+        #[arg(short, long, default_value = "8000")]
+        port: u16,
+    },
     /// Start the TaintBox API Daemon (Axum REST server)
     Daemon {
         #[arg(short, long, default_value = "8000")]
@@ -57,7 +62,8 @@ pub enum Commands {
 pub async fn run_cli() -> anyhow::Result<()> {
     let cli = Cli::parse();
 
-    match cli.command.unwrap_or(Commands::Daemon { port: 8000 }) {
+    match cli.command.unwrap_or(Commands::App { port: 8000 }) {
+        Commands::App { port } => run_app(port).await,
         Commands::Daemon { port } => run_daemon(port).await,
         Commands::Run { task, max_steps, dir, api_url, model } => {
             run_harness_task(&task, max_steps, dir, &api_url, &model).await
@@ -71,6 +77,41 @@ pub async fn run_cli() -> anyhow::Result<()> {
 async fn run_tui_command() -> anyhow::Result<()> {
     let app = crate::tui::TuiApp::default();
     crate::tui::run_tui(app)
+}
+
+pub fn open_browser(url: &str) {
+    #[cfg(target_os = "windows")]
+    {
+        let _ = std::process::Command::new("cmd")
+            .args(["/c", "start", url])
+            .spawn();
+    }
+    #[cfg(not(target_os = "windows"))]
+    {
+        let _ = std::process::Command::new("xdg-open")
+            .arg(url)
+            .spawn();
+    }
+}
+
+async fn run_app(port: u16) -> anyhow::Result<()> {
+    let state = AppState::new(SessionManager::new());
+    let app = create_router(state);
+    let addr = std::net::SocketAddr::from(([0, 0, 0, 0], port));
+    let browser_url = format!("http://localhost:{}", port);
+
+    println!("============================================================");
+    println!("  TAINTBOX v0.1.0 - Cyber Dark Sandbox & ACI Harness");
+    println!("  Listening on: http://{}", addr);
+    println!("  Opening browser dashboard: {}", browser_url);
+    println!("  Press Ctrl+C to stop the harness server.");
+    println!("============================================================");
+
+    open_browser(&browser_url);
+
+    let listener = tokio::net::TcpListener::bind(addr).await?;
+    axum::serve(listener, app).await?;
+    Ok(())
 }
 
 async fn run_daemon(port: u16) -> anyhow::Result<()> {
