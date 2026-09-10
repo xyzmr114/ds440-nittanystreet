@@ -90,16 +90,7 @@ pub async fn run_cli() -> anyhow::Result<()> {
 }
 
 async fn run_interactive(dir: Option<PathBuf>) -> anyhow::Result<()> {
-    let config = match crate::config::user_config::UserConfig::load() {
-        Some(cfg) => cfg,
-        None => {
-            println!("\n[!] No active TaintBox configuration found. Starting setup wizard...");
-            crate::config::user_config::run_setup_wizard()?
-        }
-    };
-
-    let mut session = interactive::InteractiveHarness::new(config, dir)?;
-    session.run_loop().await
+    crate::tui::run_zen_tui(dir).await
 }
 
 async fn run_tui_command() -> anyhow::Result<()> {
