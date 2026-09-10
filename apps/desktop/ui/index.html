@@ -74,6 +74,17 @@
         <span>View</span>
         <span class="dropdown-arrow">&#8250;</span>
       </div>
+      <div class="dropdown-item" id="menu-open-kanban">
+        <span style="display: flex; align-items: center; gap: 6px;">
+          <svg width="12" height="12" viewBox="0 0 16 16" fill="currentColor">
+            <rect x="2" y="2" width="3.5" height="12" rx="1"></rect>
+            <rect x="6.5" y="2" width="3.5" height="8" rx="1"></rect>
+            <rect x="11" y="2" width="3.5" height="10" rx="1"></rect>
+          </svg>
+          Agent Kanban
+        </span>
+        <span class="dropdown-arrow">&#8250;</span>
+      </div>
       <div class="dropdown-item">
         <span>Go</span>
         <span class="dropdown-arrow">&#8250;</span>
@@ -189,6 +200,14 @@
             </div>
 
             <div class="sidebar-nav-bottom">
+              <button class="sidebar-nav-btn" id="btn-sidebar-kanban">
+                <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5">
+                  <rect x="2" y="2" width="3.5" height="12" rx="1"></rect>
+                  <rect x="6.5" y="2" width="3.5" height="8" rx="1"></rect>
+                  <rect x="11" y="2" width="3.5" height="10" rx="1"></rect>
+                </svg>
+                <span>Agent Kanban</span>
+              </button>
               <button class="sidebar-nav-btn" id="btn-open-settings">
                 <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5">
                   <circle cx="8" cy="8" r="2.5"></circle>
@@ -469,6 +488,155 @@
           </div>
         </div>
       </section>
+    
+      <!-- View 5: Multi-Agent Kanban Orchestration Board (Overkill Port) -->
+      <section class="kanban-view" id="view-kanban" style="display: none;">
+        <div class="kanban-top-bar">
+          <div class="kanban-title-area">
+            <h2 class="kanban-title">Agent Task Orchestrator & Taint Flow Kanban</h2>
+            <div class="kanban-telemetry-chips">
+              <span class="chip clean">● 4 Active Subagents</span>
+              <span class="chip tainted">● 1 Intercepted Violation</span>
+              <span class="chip yolo">⚡ YOLO Auto-Mode Active</span>
+              <span class="chip vault">🔒 .env Vault Masked</span>
+            </div>
+          </div>
+          <div class="kanban-actions">
+            <button class="btn-primary" id="btn-add-agent-task" style="padding: 6px 12px; font-size: 12px;">+ Dispatch Goal</button>
+            <button class="btn-secondary" id="btn-close-kanban" style="padding: 6px 10px; font-size: 12px;">Back to Chat</button>
+          </div>
+        </div>
+
+        <div class="kanban-board-container">
+          <!-- Column 1: Backlog -->
+          <div class="kanban-column" data-col="backlog">
+            <div class="kanban-column-header">
+              <span class="col-title">1. Backlog & Goals</span>
+              <span class="col-count">2</span>
+            </div>
+            <div class="kanban-cards-list" id="col-backlog">
+              <div class="kanban-card">
+                <div class="card-header">
+                  <span class="card-id">TSK-105</span>
+                  <span class="card-badge safe">Safe Secret Sharing</span>
+                </div>
+                <div class="card-body">Vault redaction: mask .env tokens in model prompt context</div>
+                <div class="card-footer">
+                  <span class="card-agent">👤 Harsh (Scrum Master)</span>
+                  <span class="card-tag">Priority: High</span>
+                </div>
+              </div>
+              <div class="kanban-card">
+                <div class="card-header">
+                  <span class="card-id">TSK-106</span>
+                  <span class="card-badge safe">OpenRouter Fallback</span>
+                </div>
+                <div class="card-body">Configure cascading 429 failover to Claude 3.5 Sonnet</div>
+                <div class="card-footer">
+                  <span class="card-agent">👤 Saathvik (Backend)</span>
+                  <span class="card-tag">Resilience</span>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Column 2: Planning -->
+          <div class="kanban-column" data-col="planning">
+            <div class="kanban-column-header">
+              <span class="col-title">2. Agent Planning</span>
+              <span class="col-count">1</span>
+            </div>
+            <div class="kanban-cards-list" id="col-planning">
+              <div class="kanban-card">
+                <div class="card-header">
+                  <span class="card-id">TSK-103</span>
+                  <span class="card-badge plan">Intent Classifier</span>
+                </div>
+                <div class="card-body">Train 2-phase TF-IDF + ONNX DistilBERT query intent triage</div>
+                <div class="card-footer">
+                  <span class="card-agent">👤 Akshat (Security Lead)</span>
+                  <span class="card-tag clean-tag">0x00 Clean</span>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Column 3: Sandbox Exec -->
+          <div class="kanban-column" data-col="executing">
+            <div class="kanban-column-header">
+              <span class="col-title">3. Sandbox Execution</span>
+              <span class="col-count">1</span>
+            </div>
+            <div class="kanban-cards-list" id="col-executing">
+              <div class="kanban-card">
+                <div class="card-header">
+                  <span class="card-id">TSK-102</span>
+                  <span class="card-badge exec">Sandbox #2</span>
+                </div>
+                <div class="card-body">Refactor state tree commit history to causal 2-Phase DAG</div>
+                <div class="card-footer">
+                  <span class="card-agent">👤 Aryamaan (Team Lead)</span>
+                  <span class="card-tag running-tag">Step 4/6</span>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Column 4: Taint Audit -->
+          <div class="kanban-column" data-col="audit">
+            <div class="kanban-column-header">
+              <span class="col-title">4. Security & Taint Audit</span>
+              <span class="col-count">1</span>
+            </div>
+            <div class="kanban-cards-list" id="col-audit">
+              <div class="kanban-card intercepted">
+                <div class="card-header">
+                  <span class="card-id">TSK-101</span>
+                  <span class="card-badge alert">BLOCKED BY POLICY</span>
+                </div>
+                <div class="card-body">M365 SOX Invoice exfiltration probe: curl blocked at tool boundary</div>
+                <div class="card-footer">
+                  <span class="card-agent">👤 Ammar (CI/CD)</span>
+                  <span class="card-tag taint-tag">Bit 0: UntrustedWeb</span>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Column 5: Verified -->
+          <div class="kanban-column" data-col="verified">
+            <div class="kanban-column-header">
+              <span class="col-title">5. Verified / Completed</span>
+              <span class="col-count">2</span>
+            </div>
+            <div class="kanban-cards-list" id="col-verified">
+              <div class="kanban-card verified">
+                <div class="card-header">
+                  <span class="card-id">TSK-100</span>
+                  <span class="card-badge pass">Verified 1:1 Parity</span>
+                </div>
+                <div class="card-body">Complete 1:1 OpenCode UI parity verified by Subagent (99% score)</div>
+                <div class="card-footer">
+                  <span class="card-agent">👤 Harsh Rathi</span>
+                  <span class="card-tag pass-tag">60/60 Tests</span>
+                </div>
+              </div>
+              <div class="kanban-card verified">
+                <div class="card-header">
+                  <span class="card-id">TSK-104</span>
+                  <span class="card-badge pass">Single Executable</span>
+                </div>
+                <div class="card-body">Axum REST server and frontend bundled into single tbox.exe</div>
+                <div class="card-footer">
+                  <span class="card-agent">👤 Saathvik (Dashboard)</span>
+                  <span class="card-tag pass-tag">Release Ready</span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
     </main>
 
     <!-- Settings & Setup Modal (with models.dev Dynamic API Integration) -->
@@ -478,49 +646,161 @@
           <span class="modal-title">tbox Settings & Provider Configuration</span>
           <button class="modal-close-btn" id="btn-close-settings">&times;</button>
         </div>
-        <div class="modal-body">
-          <div class="form-group">
-            <label class="form-label">Inference Provider</label>
-            <select class="form-select" id="settings-provider-select">
-              <option value="ollama">Ollama / Local Bunker (http://localhost:11434/v1)</option>
-              <option value="deepseek" selected>DeepSeek (https://api.deepseek.com/v1)</option>
-              <option value="openai">OpenAI (https://api.openai.com/v1)</option>
-              <option value="anthropic">Anthropic (https://api.anthropic.com/v1)</option>
-              <option value="openrouter">OpenRouter (https://openrouter.ai/api/v1)</option>
-              <option value="custom">Custom Endpoint</option>
-            </select>
-          </div>
+        <div class="modal-body" style="max-height: 70vh; overflow-y: auto;">
+          <!-- Section 1: Core Inference & Models -->
+          <div class="settings-section">
+            <h3 class="settings-section-title">1. Primary Inference & Model Gateway</h3>
+            <div class="form-grid">
+              <div class="form-group">
+                <label class="form-label">Primary Provider</label>
+                <select class="form-select" id="settings-provider-select">
+                  <option value="deepseek" selected>DeepSeek (Direct API)</option>
+                  <option value="ollama">Ollama / Local Bunker (Zero Egress)</option>
+                  <option value="openrouter">OpenRouter (Multi-Model Gateway)</option>
+                  <option value="openai">OpenAI</option>
+                  <option value="anthropic">Anthropic</option>
+                  <option value="custom">Custom Compatible Endpoint</option>
+                </select>
+              </div>
 
-          <div class="form-group">
-            <label class="form-label">API Endpoint URL</label>
-            <input type="text" class="form-input" id="settings-api-url" value="https://api.deepseek.com/v1" />
-          </div>
-
-          <div class="form-group">
-            <label class="form-label">API Key (Saved securely)</label>
-            <input type="password" class="form-input" id="settings-api-key" placeholder="Enter provider API key (optional for local Ollama)" />
-          </div>
-
-          <div class="form-group">
-            <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 4px;">
-              <label class="form-label" style="margin-bottom: 0;">Active Model (models.dev API Catalog)</label>
-              <button class="sidebar-icon-btn" id="btn-fetch-models-dev" style="font-size: 11px; display: flex; align-items: center; gap: 4px; color: var(--accent-cyan);">
-                <span>&#8635; Fetch models.dev</span>
-              </button>
+              <div class="form-group">
+                <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 4px;">
+                  <label class="form-label" style="margin-bottom: 0;">Model (models.dev Dynamic Catalog)</label>
+                  <button class="sidebar-icon-btn" id="btn-fetch-models-dev" style="font-size: 11px; display: flex; align-items: center; gap: 4px; color: var(--accent-cyan);">
+                    <span>&#8635; Fetch models.dev</span>
+                  </button>
+                </div>
+                <select class="form-select" id="settings-model-select">
+                  <!-- Dynamically populated from models.dev API -->
+                </select>
+              </div>
             </div>
-            <select class="form-select" id="settings-model-select">
-              <!-- Dynamically populated from models.dev API -->
-            </select>
+
+            <div class="form-grid">
+              <div class="form-group">
+                <label class="form-label">API Endpoint URL</label>
+                <input type="text" class="form-input" id="settings-api-url" value="https://api.deepseek.com/v1" />
+              </div>
+
+              <div class="form-group">
+                <label class="form-label">API Key</label>
+                <input type="password" class="form-input" id="settings-api-key" placeholder="Enter provider API key (optional for local Ollama)" />
+              </div>
+            </div>
+
+            <div class="form-grid">
+              <div class="form-group">
+                <label class="form-label">Fallback Provider (On 429/Failover)</label>
+                <select class="form-select" id="settings-fallback-provider">
+                  <option value="openrouter" selected>OpenRouter (Claude 3.5 Sonnet / Llama 3.3)</option>
+                  <option value="ollama">Ollama Local Bunker (qwen2.5-coder:7b)</option>
+                  <option value="none">None (Fail immediately)</option>
+                </select>
+              </div>
+
+              <div class="form-group">
+                <label class="form-label">Autonomous Execution Mode</label>
+                <select class="form-select" id="settings-exec-mode">
+                  <option value="yolo" selected>⚡ YOLO / Auto-Mode (Autonomous with Taint Boundary Interception)</option>
+                  <option value="safe">🔒 Safe Mode (Prompt Operator Before Every Tool Action)</option>
+                  <option value="audit">📝 Audit-Only Mode (Log Taint Violations without Blocking)</option>
+                </select>
+              </div>
+            </div>
           </div>
 
-          <div class="form-group">
-            <label class="form-label">Containment Boundary Policy</label>
-            <select class="form-select" id="settings-policy-select">
-              <option value="Standard">Standard (Blocks unauthorized writes & unallowlisted egress)</option>
-              <option value="Strict">Strict (Zero unconfined execution; blocks all untrusted write/exec)</option>
-              <option value="AuditOnly">AuditOnly (Log all actions without active blocking)</option>
-              <option value="Paranoid">Paranoid (Full lock-down; runtime isolation required)</option>
-            </select>
+          <!-- Section 2: Multi-Modal Capabilities (TTS, Image, Video) -->
+          <div class="settings-section">
+            <h3 class="settings-section-title">2. Multi-Modal Intelligence (TTS, Image, Video)</h3>
+            <div class="form-grid">
+              <div class="form-group">
+                <label class="form-label">Speech & TTS Engine</label>
+                <select class="form-select" id="settings-tts-select">
+                  <option value="none">None (Disabled)</option>
+                  <option value="kokoro" selected>Kokoro Neural TTS (Local Fast, 82M)</option>
+                  <option value="elevenlabs">ElevenLabs Neural Voice</option>
+                  <option value="openai-tts">OpenAI TTS-1-HD</option>
+                </select>
+              </div>
+
+              <div class="form-group">
+                <label class="form-label">Image Generation Model</label>
+                <select class="form-select" id="settings-image-select">
+                  <option value="none">None (Disabled)</option>
+                  <option value="flux-schnell" selected>FLUX.1 Schnell (Fast Latent Flux)</option>
+                  <option value="dall-e-3">DALL-E 3 (OpenAI High Definition)</option>
+                  <option value="sdxl">Stable Diffusion XL (Local ComfyUI)</option>
+                </select>
+              </div>
+
+              <div class="form-group">
+                <label class="form-label">Video Generation Model</label>
+                <select class="form-select" id="settings-video-select">
+                  <option value="none" selected>None (Disabled)</option>
+                  <option value="kling">Kling AI v1.5</option>
+                  <option value="runway">Runway Gen-3 Alpha</option>
+                  <option value="luma">Luma Dream Machine</option>
+                </select>
+              </div>
+            </div>
+          </div>
+
+          <!-- Section 3: Integrations, MCPs & Vector DB -->
+          <div class="settings-section">
+            <h3 class="settings-section-title">3. MCP Servers, Memory & Vector DB</h3>
+            <div class="form-grid">
+              <div class="form-group">
+                <label class="form-label">Memory DAG Vector Database</label>
+                <select class="form-select" id="settings-vectordb-select">
+                  <option value="local-lancedb" selected>Self-Hosted Local (LanceDB Embedded)</option>
+                  <option value="local-qdrant">Self-Hosted Local (Qdrant Embedded)</option>
+                  <option value="cloud-pinecone">Cloud Service (Pinecone Serverless)</option>
+                  <option value="cloud-supabase">Cloud Service (Supabase pgvector)</option>
+                </select>
+              </div>
+
+              <div class="form-group">
+                <label class="form-label">Model Context Protocol (MCP)</label>
+                <select class="form-select" id="settings-mcp-select">
+                  <option value="all-active" selected>Enabled (Filesystem, Git, Postgres, Brave Search)</option>
+                  <option value="minimal">Minimal (Filesystem & Git Only)</option>
+                  <option value="disabled">Disabled</option>
+                </select>
+              </div>
+            </div>
+          </div>
+
+          <!-- Section 4: Security, Secrets & Containment Walls -->
+          <div class="settings-section">
+            <h3 class="settings-section-title">4. Containment Boundaries & Secret Vault</h3>
+            <div class="form-grid">
+              <div class="form-group">
+                <label class="form-label">Taint Boundary Policy Profile</label>
+                <select class="form-select" id="settings-policy-select">
+                  <option value="Standard" selected>Standard (Blocks unauthorized writes & unallowlisted egress)</option>
+                  <option value="Strict">Strict (Zero unconfined execution; blocks all untrusted write/exec)</option>
+                  <option value="AuditOnly">AuditOnly (Log all actions without active blocking)</option>
+                  <option value="Paranoid">Paranoid (Full lock-down; runtime isolation required)</option>
+                </select>
+              </div>
+
+              <div class="form-group">
+                <label class="form-label">Sentry.io Distributed Tracing DSN</label>
+                <input type="text" class="form-input" id="settings-sentry-dsn" placeholder="https://xxx@sentry.io/project (Optional)" />
+              </div>
+            </div>
+
+            <div class="security-toggles" style="display: flex; flex-direction: column; gap: 8px; margin-top: 10px;">
+              <label style="display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--text-main); cursor: pointer;">
+                <input type="checkbox" id="toggle-env-protection" checked />
+                <span><strong>Safe Secret Sharing (.env Vault)</strong>: Auto-scrub and mask all .env keys in model prompt context with &lt;SECRET:TOKEN&gt;</span>
+              </label>
+
+              <label style="display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--text-main); cursor: pointer;">
+                <input type="checkbox" id="toggle-halluscan-drift" checked />
+                <span><strong>Semantic Drift & HalluScan Sentinel</strong>: Pre-verify file and symbol grounding before tool execution to halt hallucination drift</span>
+              </label>
+            </div>
           </div>
         </div>
         <div class="modal-footer">

@@ -67,9 +67,11 @@ const chatModelLabel = document.getElementById("chat-model-label");
 // Routing & View Switcher
 function setView(viewName) {
   state.activeView = viewName;
+  const viewKanban = document.getElementById("view-kanban");
   viewWelcome.style.display = viewName === "welcome" ? "flex" : "none";
   viewSessions.style.display = viewName === "sessions" ? "flex" : "none";
   viewConversation.style.display = viewName === "conversation" ? "flex" : "none";
+  if (viewKanban) viewKanban.style.display = viewName === "kanban" ? "flex" : "none";
 
   const btnGrid = document.getElementById("btn-grid-overview");
   const btnInspector = document.getElementById("btn-toggle-inspector");
@@ -79,6 +81,12 @@ function setView(viewName) {
   if (viewName === "welcome") {
     tabTitle.textContent = "New session";
     tabBadge.innerHTML = penSvg;
+    tabActive.classList.add("active");
+    if (btnGrid) btnGrid.classList.remove("active");
+    if (btnInspector) btnInspector.style.display = "none";
+  } else if (viewName === "kanban") {
+    tabTitle.textContent = "Agent Kanban Board";
+    tabBadge.innerHTML = `<span style="font-size: 11px;">📋</span>`;
     tabActive.classList.add("active");
     if (btnGrid) btnGrid.classList.remove("active");
     if (btnInspector) btnInspector.style.display = "none";
@@ -282,6 +290,11 @@ document.addEventListener("DOMContentLoaded", () => {
     setView("sessions");
     hamburgerMenu.style.display = "block";
     state.menuOpen = true;
+  } else if (reqView === "kanban") {
+    setView("kanban");
+  } else if (reqView === "settings") {
+    setView("welcome");
+    settingsModal.style.display = "flex";
   } else {
     setView("welcome");
   }
@@ -402,3 +415,118 @@ document.addEventListener("DOMContentLoaded", () => {
   // Initial population
   populateModelsSelect();
 });
+
+// Wire up Kanban navigation
+const menuOpenKanban = document.getElementById("menu-open-kanban");
+if (menuOpenKanban) {
+  menuOpenKanban.addEventListener("click", () => {
+    setView("kanban");
+    if (hamburgerMenu) hamburgerMenu.style.display = "none";
+  });
+}
+
+const btnSidebarKanban = document.getElementById("btn-sidebar-kanban");
+if (btnSidebarKanban) {
+  btnSidebarKanban.addEventListener("click", () => {
+    setView("kanban");
+  });
+}
+
+const btnCloseKanban = document.getElementById("btn-close-kanban");
+if (btnCloseKanban) {
+  btnCloseKanban.addEventListener("click", () => {
+    setView("conversation");
+  });
+}
+
+const btnAddAgentTask = document.getElementById("btn-add-agent-task");
+if (btnAddAgentTask) {
+  btnAddAgentTask.addEventListener("click", () => {
+    const title = prompt("Enter goal/task for autonomous agent:", "Security audit on new pull request");
+    if (title && title.trim()) {
+      const col = document.getElementById("col-backlog");
+      if (col) {
+        const idNum = Math.floor(Math.random() * 800) + 110;
+        const card = document.createElement("div");
+        card.className = "kanban-card";
+        card.innerHTML = `
+          <div class="card-header">
+            <span class="card-id">TSK-${idNum}</span>
+            <span class="card-badge plan">Queued</span>
+          </div>
+          <div class="card-body">${escapeHtml(title.trim())}</div>
+          <div class="card-footer">
+            <span class="card-agent">👤 Auto Dispatcher</span>
+            <span class="card-tag">Taint Tracking</span>
+          </div>
+        `;
+        col.prepend(card);
+      }
+    }
+  });
+}
+
+// Load and save multi-modal settings
+function loadAdvancedSettings() {
+  const tts = localStorage.getItem("tbox_tts") || "kokoro";
+  const img = localStorage.getItem("tbox_image_gen") || "flux-schnell";
+  const vid = localStorage.getItem("tbox_video_gen") || "none";
+  const vdb = localStorage.getItem("tbox_vectordb") || "local-lancedb";
+  const mcp = localStorage.getItem("tbox_mcp") || "all-active";
+  const fallback = localStorage.getItem("tbox_fallback") || "openrouter";
+  const execMode = localStorage.getItem("tbox_exec_mode") || "yolo";
+  const envProt = localStorage.getItem("tbox_env_prot") !== "false";
+  const halluProt = localStorage.getItem("tbox_hallu_prot") !== "false";
+  const sentryDsn = localStorage.getItem("tbox_sentry_dsn") || "";
+
+  const selTTS = document.getElementById("settings-tts-select");
+  if (selTTS) selTTS.value = tts;
+  const selImg = document.getElementById("settings-image-select");
+  if (selImg) selImg.value = img;
+  const selVid = document.getElementById("settings-video-select");
+  if (selVid) selVid.value = vid;
+  const selVdb = document.getElementById("settings-vectordb-select");
+  if (selVdb) selVdb.value = vdb;
+  const selMcp = document.getElementById("settings-mcp-select");
+  if (selMcp) selMcp.value = mcp;
+  const selFb = document.getElementById("settings-fallback-provider");
+  if (selFb) selFb.value = fallback;
+  const selMode = document.getElementById("settings-exec-mode");
+  if (selMode) selMode.value = execMode;
+  const chkEnv = document.getElementById("toggle-env-protection");
+  if (chkEnv) chkEnv.checked = envProt;
+  const chkHallu = document.getElementById("toggle-halluscan-drift");
+  if (chkHallu) chkHallu.checked = halluProt;
+  const inSentry = document.getElementById("settings-sentry-dsn");
+  if (inSentry) inSentry.value = sentryDsn;
+}
+
+// Patch save settings to include advanced options
+const originalSaveBtn = document.getElementById("btn-save-settings");
+if (originalSaveBtn) {
+  originalSaveBtn.addEventListener("click", () => {
+    const selTTS = document.getElementById("settings-tts-select");
+    if (selTTS) localStorage.setItem("tbox_tts", selTTS.value);
+    const selImg = document.getElementById("settings-image-select");
+    if (selImg) localStorage.setItem("tbox_image_gen", selImg.value);
+    const selVid = document.getElementById("settings-video-select");
+    if (selVid) localStorage.setItem("tbox_video_gen", selVid.value);
+    const selVdb = document.getElementById("settings-vectordb-select");
+    if (selVdb) localStorage.setItem("tbox_vectordb", selVdb.value);
+    const selMcp = document.getElementById("settings-mcp-select");
+    if (selMcp) localStorage.setItem("tbox_mcp", selMcp.value);
+    const selFb = document.getElementById("settings-fallback-provider");
+    if (selFb) localStorage.setItem("tbox_fallback", selFb.value);
+    const selMode = document.getElementById("settings-exec-mode");
+    if (selMode) localStorage.setItem("tbox_exec_mode", selMode.value);
+    const chkEnv = document.getElementById("toggle-env-protection");
+    if (chkEnv) localStorage.setItem("tbox_env_prot", chkEnv.checked);
+    const chkHallu = document.getElementById("toggle-halluscan-drift");
+    if (chkHallu) localStorage.setItem("tbox_hallu_prot", chkHallu.checked);
+    const inSentry = document.getElementById("settings-sentry-dsn");
+    if (inSentry) localStorage.setItem("tbox_sentry_dsn", inSentry.value);
+  });
+}
+
+// Call on init
+loadAdvancedSettings();
