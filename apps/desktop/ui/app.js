@@ -240,35 +240,85 @@ function handleSendPrompt(inputEl) {
   }
 }
 
-// Fetch models from models.dev API
-async function fetchModelsDevCatalog() {
+let allProvidersCatalog = [];
+
+// Fetch models and providers dynamically from backend models.dev single source of truth
+async function fetchModelsDevCatalog(forceRefresh = false) {
+  const btn = document.getElementById("btn-fetch-models-dev");
+  if (btn) btn.innerHTML = "<span>&#8635; Syncing models.dev...</span>";
+
   try {
-    const res = await fetch("https://models.dev/api.json");
-    if (res.ok) {
-      const data = await res.json();
-      if (Array.isArray(data)) {
+    if (forceRefresh) {
+      await fetch("/v1/models/refresh", { method: "POST" }).catch(() => {});
+    }
+
+    // 1. Fetch all providers
+    const provRes = await fetch("/v1/models/providers");
+    if (provRes.ok) {
+      allProvidersCatalog = await provRes.json();
+      populateProvidersSelect();
+    }
+
+    // 2. Fetch models for selected provider
+    const provId = state.provider || "deepseek";
+    const modelsRes = await fetch(`/v1/models?provider=${encodeURIComponent(provId)}`);
+    if (modelsRes.ok) {
+      const data = await modelsRes.json();
+      if (Array.isArray(data) && data.length > 0) {
         state.modelsCatalog = data.map(m => ({
-          id: m.id || m.name,
+          id: m.id,
           name: m.name || m.id,
-          provider: m.provider || "openai",
-          context: m.context_window || 128000
+          provider: m.provider,
+          context: m.context_window || 128000,
+          cost_in: m.cost_input_per_million || 0,
+          cost_out: m.cost_output_per_million || 0,
+          has_tools: m.has_tools,
+          has_vision: m.has_vision,
+          has_reasoning: m.has_reasoning,
         }));
       }
     }
   } catch (e) {
     console.log("Using built-in models.dev catalog fallback:", e);
+  } finally {
+    if (btn) btn.innerHTML = "<span>&#8635; Fetch models.dev</span>";
   }
   populateModelsSelect();
 }
 
+function populateProvidersSelect() {
+  const sel = document.getElementById("settings-provider-select");
+  if (!sel || allProvidersCatalog.length === 0) return;
+
+  const current = state.provider;
+  sel.innerHTML = "";
+  allProvidersCatalog.forEach(p => {
+    const opt = document.createElement("option");
+    opt.value = p.id;
+    const badge = p.is_popular ? " ★" : "";
+    opt.textContent = `${p.name} (${p.model_count} models)${badge}`;
+    if (p.id === current) opt.selected = true;
+    sel.appendChild(opt);
+  });
+}
+
 function populateModelsSelect() {
   const sel = document.getElementById("settings-model-select");
+  if (!sel) return;
   sel.innerHTML = "";
   state.modelsCatalog.forEach(m => {
     const opt = document.createElement("option");
-    opt.value = m.name;
-    opt.textContent = `${m.name} [${m.provider}] (${Math.round(m.context / 1000)}k ctx)`;
-    if (m.name === state.model) opt.selected = true;
+    opt.value = m.id || m.name;
+    const ctx = Math.round(m.context / 1000);
+    const pricing = (m.cost_in > 0 || m.cost_out > 0) ? ` [$${m.cost_in.toFixed(2)} in/$${m.cost_out.toFixed(2)} out]` : "";
+    const badges = [];
+    if (m.has_tools) badges.push("Tools");
+    if (m.has_vision) badges.push("Vision");
+    if (m.has_reasoning) badges.push("R1");
+    const badgeStr = badges.length > 0 ? ` [${badges.join(", ")}]` : "";
+
+    opt.textContent = `${m.name} (${ctx}k ctx)${pricing}${badgeStr}`;
+    if (m.id === state.model || m.name === state.model) opt.selected = true;
     sel.appendChild(opt);
   });
 }
@@ -400,7 +450,40 @@ document.addEventListener("DOMContentLoaded", () => {
     settingsModal.style.display = "none";
   });
 
-  document.getElementById("btn-fetch-models-dev").addEventListener("click", fetchModelsDevCatalog);
+  document.getElementById("btn-fetch-models-dev").addEventListener("click", () => fetchModelsDevCatalog(true));
+
+  const providerSel = document.getElementById("settings-provider-select");
+  if (providerSel) {
+    providerSel.addEventListener("change", async (e) => {
+      const pId = e.target.value;
+      const matched = allProvidersCatalog.find(p => p.id === pId);
+      if (matched && matched.default_api) {
+        document.getElementById("settings-api-url").value = matched.default_api;
+      }
+      try {
+        const res = await fetch(`/v1/models?provider=${encodeURIComponent(pId)}`);
+        if (res.ok) {
+          const data = await res.json();
+          if (Array.isArray(data) && data.length > 0) {
+            state.modelsCatalog = data.map(m => ({
+              id: m.id,
+              name: m.name || m.id,
+              provider: m.provider,
+              context: m.context_window || 128000,
+              cost_in: m.cost_input_per_million || 0,
+              cost_out: m.cost_output_per_million || 0,
+              has_tools: m.has_tools,
+              has_vision: m.has_vision,
+              has_reasoning: m.has_reasoning,
+            }));
+            populateModelsSelect();
+          }
+        }
+      } catch (err) {
+        console.log("Failed to fetch models for provider:", err);
+      }
+    });
+  }
 
   // Model Pill Click in prompt cards opens settings
   document.getElementById("btn-model-select").addEventListener("click", () => {
@@ -412,8 +495,8 @@ document.addEventListener("DOMContentLoaded", () => {
     populateModelsSelect();
   });
 
-  // Initial population
-  populateModelsSelect();
+  // Initial population from backend models.dev engine
+  fetchModelsDevCatalog(false);
 });
 
 // Wire up Kanban navigation

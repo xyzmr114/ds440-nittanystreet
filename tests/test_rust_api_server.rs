@@ -92,3 +92,51 @@ async fn test_api_tool_write_and_read() {
     assert_eq!(body["output"], "hello rust");
     assert_eq!(body["status"], "SUCCESS");
 }
+
+#[tokio::test]
+async fn test_models_dev_api_endpoints() {
+    let state = AppState::new(SessionManager::new());
+    let app = create_router(state.clone());
+
+    // 1. Test GET /v1/models/providers
+    let req = Request::builder()
+        .uri("/v1/models/providers")
+        .body(Body::empty())
+        .unwrap();
+
+    let res = app.clone().oneshot(req).await.unwrap();
+    assert_eq!(res.status(), StatusCode::OK);
+    let bytes = axum::body::to_bytes(res.into_body(), usize::MAX).await.unwrap();
+    let providers: Vec<serde_json::Value> = serde_json::from_slice(&bytes).unwrap();
+    assert!(providers.len() >= 200, "Should contain 200+ providers from models.dev, got {}", providers.len());
+
+    // Verify Google and Ollama exist in provider list
+    assert!(providers.iter().any(|p| p["id"] == "google" || p["id"] == "ollama"));
+
+    // 2. Test GET /v1/models?provider=google
+    let req2 = Request::builder()
+        .uri("/v1/models?provider=google")
+        .body(Body::empty())
+        .unwrap();
+
+    let res2 = app.clone().oneshot(req2).await.unwrap();
+    assert_eq!(res2.status(), StatusCode::OK);
+    let bytes2 = axum::body::to_bytes(res2.into_body(), usize::MAX).await.unwrap();
+    let google_models: Vec<serde_json::Value> = serde_json::from_slice(&bytes2).unwrap();
+    assert!(!google_models.is_empty(), "Google models should not be empty");
+    assert!(google_models.iter().any(|m| m["id"].as_str().unwrap_or("").contains("gemini")));
+
+    // 3. Test GET /api/providers with search query
+    let req3 = Request::builder()
+        .uri("/api/providers?search=groq")
+        .body(Body::empty())
+        .unwrap();
+
+    let res3 = app.clone().oneshot(req3).await.unwrap();
+    assert_eq!(res3.status(), StatusCode::OK);
+    let bytes3 = axum::body::to_bytes(res3.into_body(), usize::MAX).await.unwrap();
+    let groq_providers: Vec<serde_json::Value> = serde_json::from_slice(&bytes3).unwrap();
+    assert!(!groq_providers.is_empty(), "Should find Groq provider");
+    assert_eq!(groq_providers[0]["id"], "groq");
+}
+

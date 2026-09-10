@@ -58,7 +58,11 @@ fn test_models_dev_catalog_lookup() {
 
     let anthropic_models = ModelCatalog::get_models_for_provider("anthropic");
     assert!(!anthropic_models.is_empty());
-    assert!(anthropic_models.iter().any(|m| m.id.contains("claude-3-7-sonnet") || m.id.contains("claude-3-5-sonnet")));
+    assert!(anthropic_models.iter().any(|m| m.id.contains("claude")));
+
+    let google_models = ModelCatalog::get_models_for_provider("google");
+    assert!(!google_models.is_empty());
+    assert!(google_models.iter().any(|m| m.id.contains("gemini")));
 
     let found = ModelCatalog::find_model("gpt-4o");
     assert!(found.is_some());

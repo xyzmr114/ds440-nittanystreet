@@ -70,6 +70,7 @@ pub enum Commands {
 }
 
 pub async fn run_cli() -> anyhow::Result<()> {
+    crate::config::models_dev::ModelCatalog::trigger_background_update_if_needed();
     let cli = Cli::parse();
 
     match cli.command.unwrap_or(Commands::Interactive { dir: None }) {

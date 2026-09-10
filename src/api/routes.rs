@@ -1,5 +1,5 @@
 use axum::{
-    extract::{Path, State},
+    extract::{Path, Query, State},
     http::StatusCode,
     response::IntoResponse,
     routing::{delete, get, post},
@@ -141,6 +141,12 @@ pub fn create_router(state: AppState) -> Router {
         .route("/v1/taint/graph", get(get_taint_graph))
         .route("/v1/lab/scenarios", get(get_lab_scenarios))
         .route("/v1/lab/execute", post(execute_lab_scenario))
+        .route("/v1/models", get(get_models_dev_models))
+        .route("/api/models", get(get_models_dev_models))
+        .route("/v1/models/providers", get(get_models_dev_providers))
+        .route("/api/providers", get(get_models_dev_providers))
+        .route("/v1/models/refresh", post(refresh_models_dev_cache))
+        .route("/api/models/refresh", post(refresh_models_dev_cache))
         .fallback(static_ui_handler)
         .with_state(state)
 }
@@ -734,4 +740,53 @@ async fn execute_lab_scenario(
         walls_tripped,
         taint_records_count: harness.taint_engine.list_tainted_resources().len(),
     }))
+}
+
+#[derive(Debug, Deserialize)]
+pub struct ModelsQueryParams {
+    pub provider: Option<String>,
+    pub search: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct ProvidersQueryParams {
+    pub search: Option<String>,
+}
+
+async fn get_models_dev_models(Query(params): Query<ModelsQueryParams>) -> impl IntoResponse {
+    let models = if let Some(ref p) = params.provider {
+        crate::config::models_dev::ModelCatalog::get_models_for_provider(p)
+    } else {
+        crate::config::models_dev::ModelCatalog::get_full_catalog()
+    };
+
+    if let Some(ref q) = params.search {
+        let q_lower = q.to_lowercase();
+        let filtered: Vec<_> = models
+            .into_iter()
+            .filter(|m| m.id.to_lowercase().contains(&q_lower) || m.name.to_lowercase().contains(&q_lower))
+            .collect();
+        Json(filtered)
+    } else {
+        Json(models)
+    }
+}
+
+async fn get_models_dev_providers(Query(params): Query<ProvidersQueryParams>) -> impl IntoResponse {
+    let providers = crate::config::models_dev::ModelCatalog::list_providers(params.search.as_deref());
+    Json(providers)
+}
+
+async fn refresh_models_dev_cache() -> impl IntoResponse {
+    match crate::config::models_dev::ModelCatalog::refresh_cache().await {
+        Ok(count) => Json(serde_json::json!({
+            "status": "refreshed",
+            "provider_count": count,
+            "timestamp": std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_secs()
+        })),
+        Err(e) => Json(serde_json::json!({
+            "status": "error",
+            "message": e.to_string()
+        })),
+    }
 }
