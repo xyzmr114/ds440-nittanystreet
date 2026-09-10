@@ -917,8 +917,9 @@ impl ZenApp {
                     }
                 } else if let Some(err) = val.get("error").and_then(|e| e.get("message")).and_then(|m| m.as_str()) {
                     self.feed.push(FeedItem::AgentMessage {
-                        text: format!("API Error: {}", err),
+                        text: format!("API Error: {} (falling back to deterministic sandbox turn)", err),
                     });
+                    self.run_direct_sandbox_step(prompt);
                 }
             }
             Err(e) => {
