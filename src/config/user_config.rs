@@ -35,6 +35,7 @@ impl UserConfig {
     }
 
     pub fn load() -> Option<Self> {
+        let _ = dotenvy::dotenv();
         let path = Self::config_path();
         if path.exists() {
             if let Ok(content) = fs::read_to_string(&path) {
@@ -44,7 +45,17 @@ impl UserConfig {
             }
         }
 
-        // Fallback: check environment variables
+        // Fallback: check environment variables (loaded from process or .env)
+        if let Ok(key) = std::env::var("OPENROUTER_API_KEY") {
+            return Some(Self {
+                provider: "openrouter".to_string(),
+                api_url: std::env::var("OPENROUTER_BASE_URL").unwrap_or_else(|_| "https://openrouter.ai/api/v1".to_string()),
+                api_key: Some(key),
+                model: std::env::var("OPENROUTER_MODEL").unwrap_or_else(|_| "anthropic/claude-3.5-sonnet".to_string()),
+                policy_profile: "Standard".to_string(),
+                temperature: 0.0,
+            });
+        }
         if let Ok(key) = std::env::var("OPENAI_API_KEY") {
             return Some(Self {
                 provider: "openai".to_string(),
@@ -61,6 +72,16 @@ impl UserConfig {
                 api_url: "https://api.anthropic.com/v1".to_string(),
                 api_key: Some(key),
                 model: "claude-3-5-sonnet-20241022".to_string(),
+                policy_profile: "Standard".to_string(),
+                temperature: 0.0,
+            });
+        }
+        if let Ok(key) = std::env::var("DEEPSEEK_API_KEY") {
+            return Some(Self {
+                provider: "deepseek".to_string(),
+                api_url: "https://api.deepseek.com/v1".to_string(),
+                api_key: Some(key),
+                model: "deepseek-chat".to_string(),
                 policy_profile: "Standard".to_string(),
                 temperature: 0.0,
             });

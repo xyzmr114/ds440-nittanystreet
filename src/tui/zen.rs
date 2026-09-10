@@ -64,6 +64,82 @@ pub enum AgentTurnResult {
     },
 }
 
+#[cfg(windows)]
+pub fn disable_quick_edit() {
+    use std::os::raw::c_void;
+    type HANDLE = *mut c_void;
+    type BOOL = i32;
+    type DWORD = u32;
+
+    const STD_INPUT_HANDLE: DWORD = -10i32 as DWORD;
+    const ENABLE_QUICK_EDIT_MODE: DWORD = 0x0040;
+    const ENABLE_EXTENDED_FLAGS: DWORD = 0x0080;
+
+    extern "system" {
+        fn GetStdHandle(nStdHandle: DWORD) -> HANDLE;
+        fn GetConsoleMode(hConsoleHandle: HANDLE, lpMode: *mut DWORD) -> BOOL;
+        fn SetConsoleMode(hConsoleHandle: HANDLE, dwMode: DWORD) -> BOOL;
+    }
+
+    unsafe {
+        let handle = GetStdHandle(STD_INPUT_HANDLE);
+        if !handle.is_null() && handle != (-1isize as *mut c_void) {
+            let mut mode: DWORD = 0;
+            if GetConsoleMode(handle, &mut mode) != 0 {
+                let new_mode = (mode | ENABLE_EXTENDED_FLAGS) & !ENABLE_QUICK_EDIT_MODE;
+                SetConsoleMode(handle, new_mode);
+            }
+        }
+    }
+}
+
+#[cfg(not(windows))]
+pub fn disable_quick_edit() {}
+
+#[cfg(windows)]
+pub fn get_clipboard_text() -> Option<String> {
+    use std::ffi::CStr;
+    use std::os::raw::c_void;
+    type HANDLE = *mut c_void;
+    type BOOL = i32;
+    type UINT = u32;
+
+    const CF_TEXT: UINT = 1;
+
+    #[link(name = "user32")]
+    extern "system" {
+        fn OpenClipboard(hWndNewOwner: HANDLE) -> BOOL;
+        fn CloseClipboard() -> BOOL;
+        fn GetClipboardData(uFormat: UINT) -> HANDLE;
+    }
+
+    extern "system" {
+        fn GlobalLock(hMem: HANDLE) -> *mut u8;
+        fn GlobalUnlock(hMem: HANDLE) -> BOOL;
+    }
+
+    unsafe {
+        if OpenClipboard(std::ptr::null_mut()) != 0 {
+            let handle = GetClipboardData(CF_TEXT);
+            if !handle.is_null() {
+                let ptr = GlobalLock(handle);
+                if !ptr.is_null() {
+                    let text = CStr::from_ptr(ptr as *const _).to_string_lossy().into_owned();
+                    let _ = GlobalUnlock(handle);
+                    let _ = CloseClipboard();
+                    return Some(text);
+                }
+            }
+            let _ = CloseClipboard();
+        }
+    }
+    None
+}
+
+#[cfg(not(windows))]
+pub fn get_clipboard_text() -> Option<String> {
+    None
+}
 
 fn format_number_commas(n: usize) -> String {
     let s = n.to_string();
@@ -276,7 +352,11 @@ impl ZenApp {
                 },
                 PaletteCommand {
                     name: "/setup".to_string(),
-                    desc: "Reconfigure provider, endpoint URL, and API key".to_string(),
+                    desc: "Reconfigure provider, endpoint URL, API key, and policy".to_string(),
+                },
+                PaletteCommand {
+                    name: "/help".to_string(),
+                    desc: "Display available commands and keyboard shortcuts".to_string(),
                 },
                 PaletteCommand {
                     name: "/clear".to_string(),
@@ -327,7 +407,7 @@ impl ZenApp {
     }
 
     pub fn handle_key(&mut self, key: KeyEvent) {
-        if key.kind != KeyEventKind::Press {
+        if key.kind == KeyEventKind::Release {
             return;
         }
 
@@ -371,7 +451,11 @@ impl ZenApp {
                     self.palette_query.pop();
                     self.palette_selected = 0;
                 }
-                KeyCode::Char(c) => {
+                KeyCode::Char('u') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+                    self.palette_query.clear();
+                    self.palette_selected = 0;
+                }
+                KeyCode::Char(c) if !key.modifiers.contains(KeyModifiers::CONTROL) => {
                     self.palette_query.push(c);
                     self.palette_selected = 0;
                 }
@@ -416,7 +500,36 @@ impl ZenApp {
             KeyCode::Char('q') if key.modifiers.contains(KeyModifiers::CONTROL) => {
                 self.should_quit = true;
             }
-            KeyCode::Char(c) => {
+            KeyCode::Char('v') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+                if let Some(clip) = get_clipboard_text() {
+                    let clean = clip.replace('\r', "");
+                    self.input_buffer.insert_str(self.cursor_position, &clean);
+                    self.cursor_position += clean.len();
+                }
+            }
+            KeyCode::Char('u') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+                self.input_buffer.clear();
+                self.cursor_position = 0;
+            }
+            KeyCode::Char('w') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+                if self.cursor_position > 0 {
+                    let before = &self.input_buffer[..self.cursor_position];
+                    let trimmed = before.trim_end();
+                    let new_pos = match trimmed.rfind(' ') {
+                        Some(idx) => idx + 1,
+                        None => 0,
+                    };
+                    self.input_buffer.drain(new_pos..self.cursor_position);
+                    self.cursor_position = new_pos;
+                }
+            }
+            KeyCode::Char('a') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+                self.cursor_position = 0;
+            }
+            KeyCode::Char('e') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+                self.cursor_position = self.input_buffer.len();
+            }
+            KeyCode::Char(c) if !key.modifiers.contains(KeyModifiers::CONTROL) => {
                 self.input_buffer.insert(self.cursor_position, c);
                 self.cursor_position += 1;
             }
@@ -587,6 +700,10 @@ impl ZenApp {
             self.feed.push(FeedItem::AgentMessage { text: diff_summary });
         } else if cmd == "/setup" {
             self.open_setup_modal();
+        } else if cmd == "/help" {
+            self.feed.push(FeedItem::AgentMessage {
+                text: "✨ TaintBox Command Reference:\n  /setup   - Configure LLM provider (Ollama, OpenAI, Anthropic, OpenRouter, DeepSeek), API key & endpoint\n  /models  - View or switch active models from models.dev catalog\n  /init    - Index workspace and check/create AGENTS.md\n  /walls   - Inspect containment wall status (PromptInject, E-Stop, HalluScan)\n  /taint   - View active bitmask taint tracking ledger\n  /diff    - Inspect modified sandbox files\n  /attack  - Stage an adversarial injection scenario\n  /rewind  - Revert sandbox filesystem to clean baseline snapshot\n  /clear   - Clear terminal feed\n  /exit    - Safely shutdown TaintBox\n  ctrl+p   - Open Command Palette\n  tab      - Cycle agent mode (Build / Plan / Review / Audit)".to_string(),
+            });
         } else if cmd == "/clear" {
             self.feed.clear();
             self.initialize_welcome_banner();
@@ -1188,7 +1305,18 @@ impl ZenApp {
                     _ => {}
                 }
             }
-            KeyCode::Char(c) if self.setup_step == 1 || self.setup_step == 2 => {
+            KeyCode::Char('v') if key.modifiers.contains(KeyModifiers::CONTROL) && (self.setup_step == 1 || self.setup_step == 2) => {
+                if let Some(clip) = get_clipboard_text() {
+                    let clean = clip.trim().replace('\r', "").replace('\n', "");
+                    self.setup_input_buffer.insert_str(self.setup_input_cursor, &clean);
+                    self.setup_input_cursor += clean.len();
+                }
+            }
+            KeyCode::Char('u') if key.modifiers.contains(KeyModifiers::CONTROL) && (self.setup_step == 1 || self.setup_step == 2) => {
+                self.setup_input_buffer.clear();
+                self.setup_input_cursor = 0;
+            }
+            KeyCode::Char(c) if (self.setup_step == 1 || self.setup_step == 2) && !key.modifiers.contains(KeyModifiers::CONTROL) => {
                 self.setup_input_buffer.insert(self.setup_input_cursor, c);
                 self.setup_input_cursor += 1;
             }
@@ -1207,6 +1335,12 @@ impl ZenApp {
                 if self.setup_input_cursor < self.setup_input_buffer.len() {
                     self.setup_input_cursor += 1;
                 }
+            }
+            KeyCode::Home if self.setup_step == 1 || self.setup_step == 2 => {
+                self.setup_input_cursor = 0;
+            }
+            KeyCode::End if self.setup_step == 1 || self.setup_step == 2 => {
+                self.setup_input_cursor = self.setup_input_buffer.len();
             }
             KeyCode::Enter => {
                 self.advance_setup_step();
@@ -1527,10 +1661,20 @@ impl ZenApp {
     pub fn tick(&mut self) {
         self.progress_ticks = (self.progress_ticks + 1) % 100;
         if let Some(rx) = &mut self.agent_rx {
-            if let Ok(res) = rx.try_recv() {
-                self.process_agent_result(res);
-                self.is_running = false;
-                self.agent_rx = None;
+            match rx.try_recv() {
+                Ok(res) => {
+                    self.process_agent_result(res);
+                    self.is_running = false;
+                    self.agent_rx = None;
+                }
+                Err(tokio::sync::mpsc::error::TryRecvError::Disconnected) => {
+                    self.feed.push(FeedItem::AgentMessage {
+                        text: "[Agent background execution finished or disconnected]".to_string(),
+                    });
+                    self.is_running = false;
+                    self.agent_rx = None;
+                }
+                Err(tokio::sync::mpsc::error::TryRecvError::Empty) => {}
             }
         }
     }
@@ -1764,16 +1908,17 @@ impl ZenApp {
 
         let display_text = if self.input_buffer.is_empty() {
             vec![
-                Span::styled("│ ", Style::default().fg(COLOR_BLUE).add_modifier(Modifier::BOLD)),
+                Span::styled("│ ", Style::default().fg(COLOR_CYAN).add_modifier(Modifier::BOLD)),
+                Span::styled("█ ", Style::default().fg(COLOR_CYAN)),
                 Span::styled(
-                    format!("{} {} tbox Zen", self.agent_mode, self.model_name),
+                    "Ask anything, / for commands, @ for context...",
                     Style::default().fg(COLOR_DIM),
                 ),
             ]
         } else {
             let (before, after) = self.input_buffer.split_at(self.cursor_position);
             vec![
-                Span::styled("│ ", Style::default().fg(COLOR_BLUE).add_modifier(Modifier::BOLD)),
+                Span::styled("│ ", Style::default().fg(COLOR_CYAN).add_modifier(Modifier::BOLD)),
                 Span::styled(before, Style::default().fg(COLOR_WHITE)),
                 Span::styled("█", Style::default().fg(COLOR_CYAN)),
                 Span::styled(after, Style::default().fg(COLOR_WHITE)),
@@ -1783,14 +1928,26 @@ impl ZenApp {
         let input_p = Paragraph::new(Line::from(display_text));
         frame.render_widget(input_p, inner_rect);
 
-        let progress_chars = ["■■■■░░░░", "░■■■■░░░", "░░■■■■░░", "░░░■■■■░", "░░░░■■■■"];
-        let p_bar = progress_chars[(self.progress_ticks / 4) % progress_chars.len()];
-
-        let footer_left = vec![
-            Span::styled(format!("{} ", p_bar), Style::default().fg(COLOR_CYAN)),
-            Span::styled("esc", Style::default().fg(COLOR_WHITE).add_modifier(Modifier::BOLD)),
-            Span::styled(" interrupt", Style::default().fg(COLOR_DIM)),
-        ];
+        let footer_left = if self.is_running {
+            let progress_chars = ["■■■■░░░░", "░■■■■░░░", "░░■■■■░░", "░░░■■■■░", "░░░░■■■■"];
+            let p_bar = progress_chars[(self.progress_ticks / 4) % progress_chars.len()];
+            vec![
+                Span::styled(format!("{} ", p_bar), Style::default().fg(COLOR_CYAN)),
+                Span::styled("esc", Style::default().fg(COLOR_WHITE).add_modifier(Modifier::BOLD)),
+                Span::styled(" interrupt", Style::default().fg(COLOR_DIM)),
+            ]
+        } else {
+            vec![
+                Span::styled("● ", Style::default().fg(COLOR_GREEN)),
+                Span::styled("Ready  ", Style::default().fg(COLOR_WHITE).add_modifier(Modifier::BOLD)),
+                Span::styled("enter", Style::default().fg(COLOR_WHITE).add_modifier(Modifier::BOLD)),
+                Span::styled(" send   ", Style::default().fg(COLOR_DIM)),
+                Span::styled("/setup", Style::default().fg(COLOR_WHITE).add_modifier(Modifier::BOLD)),
+                Span::styled(" config   ", Style::default().fg(COLOR_DIM)),
+                Span::styled("/help", Style::default().fg(COLOR_WHITE).add_modifier(Modifier::BOLD)),
+                Span::styled(" commands", Style::default().fg(COLOR_DIM)),
+            ]
+        };
 
         let footer_right = vec![
             Span::styled("tab", Style::default().fg(COLOR_WHITE).add_modifier(Modifier::BOLD)),
@@ -1801,7 +1958,7 @@ impl ZenApp {
 
         let footer_cols = Layout::default()
             .direction(Direction::Horizontal)
-            .constraints([Constraint::Percentage(50), Constraint::Percentage(50)])
+            .constraints([Constraint::Percentage(55), Constraint::Percentage(45)])
             .split(dock_chunks[2]);
 
         let f_left = Paragraph::new(Line::from(footer_left));
@@ -1973,12 +2130,14 @@ impl ZenApp {
 }
 
 pub async fn run_zen_tui(dir: Option<PathBuf>) -> anyhow::Result<()> {
+    disable_quick_edit();
     enable_raw_mode()?;
     let mut stdout = io::stdout();
     execute!(stdout, EnterAlternateScreen)?;
     let backend = CrosstermBackend::new(stdout);
     let mut terminal = Terminal::new(backend)?;
 
+    let is_first_run = UserConfig::load().is_none();
     let config = UserConfig::load().unwrap_or_default();
     let harness = match dir {
         Some(d) => ACIHarness::new_with_dir(d).ok(),
@@ -1986,6 +2145,11 @@ pub async fn run_zen_tui(dir: Option<PathBuf>) -> anyhow::Result<()> {
     };
 
     let mut app = ZenApp::new(harness, config);
+
+    // Auto-launch Setup Wizard on first run or when credentials are unconfigured
+    if is_first_run || (app.config.api_key.as_deref().unwrap_or("").trim().is_empty() && app.config.provider != "ollama") {
+        app.open_setup_modal();
+    }
 
     let res = run_zen_loop(&mut terminal, &mut app).await;
 
@@ -2006,13 +2170,14 @@ async fn run_zen_loop(
         terminal.draw(|f| app.draw(f))?;
 
         if crossterm::event::poll(tick_rate)? {
-            // Drain pending events to eliminate stutter and repeat lag on Windows
-            while crossterm::event::poll(Duration::from_millis(0))? {
-                if let Event::Key(key) = event::read()? {
-                    if key.kind == KeyEventKind::Press {
+            match event::read()? {
+                Event::Key(key) => {
+                    if key.kind != KeyEventKind::Release {
                         app.handle_key(key);
                     }
                 }
+                Event::Resize(_, _) => {}
+                _ => {}
             }
         }
 
