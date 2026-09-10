@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+﻿<!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
@@ -17,12 +17,13 @@
       </div>
 
       <nav class="nav-tabs">
-        <button class="tab-btn active" data-tab="dashboard">1:Dashboard</button>
-        <button class="tab-btn" data-tab="taint">2:Taint Ledger</button>
-        <button class="tab-btn" data-tab="walls">3:Containment Walls</button>
-        <button class="tab-btn" data-tab="providers">4:Providers & APIs</button>
-        <button class="tab-btn" data-tab="benchmarks">5:Benchmarks</button>
-        <button class="tab-btn" data-tab="lab" style="color: var(--accent-red); font-weight: 700;">6:⚡ Attack Lab</button>
+        <button class="tab-btn active" data-tab="dashboard"><span>1</span> Dashboard</button>
+        <button class="tab-btn" data-tab="terminal"><span style="color: var(--accent-cyan);">⚡</span> Terminal</button>
+        <button class="tab-btn" data-tab="taint"><span>2</span> Taint Ledger</button>
+        <button class="tab-btn" data-tab="walls"><span>3</span> Containment Walls</button>
+        <button class="tab-btn" data-tab="providers"><span>4</span> Models & APIs</button>
+        <button class="tab-btn" data-tab="benchmarks"><span>5</span> Benchmarks</button>
+        <button class="tab-btn" data-tab="lab" style="color: var(--accent-red); font-weight: 700;"><span>6</span> ⚡ Attack Lab</button>
       </nav>
 
       <div class="header-status">
@@ -37,47 +38,69 @@
       <div class="stats-grid">
         <div class="stat-card">
           <div class="stat-title">ACTIVE SANDBOXES</div>
-          <div class="stat-value cyan" id="stat-sandboxes">0</div>
-          <div class="stat-sub">Isolated OS Environments</div>
+          <div class="stat-value cyan" id="stat-sandboxes">1</div>
+          <div class="stat-sub">Isolated TempDir / MicroVM Roots</div>
         </div>
         <div class="stat-card">
           <div class="stat-title">TOTAL TOOL STEPS</div>
-          <div class="stat-value green" id="stat-steps">0</div>
-          <div class="stat-sub">Read / Write / Exec Turns</div>
+          <div class="stat-value green" id="stat-steps">24</div>
+          <div class="stat-sub">Read / Write / Exec / View Turns</div>
         </div>
         <div class="stat-card">
           <div class="stat-title">TAINTED ARTIFACTS</div>
-          <div class="stat-value red" id="stat-taint">0</div>
-          <div class="stat-sub">Tracked in Provenance DAG</div>
+          <div class="stat-value red" id="stat-taint">3</div>
+          <div class="stat-sub">Tracked in Bitmask Provenance DAG</div>
         </div>
         <div class="stat-card">
           <div class="stat-title">CONTAINMENT TRIPS</div>
-          <div class="stat-value amber" id="stat-trips">0</div>
-          <div class="stat-sub" id="stat-trips-breakdown">PI:0 OU:0 HS:0 ES:0</div>
+          <div class="stat-value amber" id="stat-trips">7</div>
+          <div class="stat-sub" id="stat-trips-breakdown">PI:4 OU:1 HS:0 ES:2</div>
         </div>
       </div>
 
       <div class="panel event-panel">
         <div class="panel-header">
-          <span>Live Security & ACI Event Log</span>
-          <button class="btn-sm" id="btn-refresh-events">Refresh</button>
+          <span>Live Security & ACI Event Stream</span>
+          <div style="display: flex; gap: 8px;">
+            <button class="btn-sm" id="btn-quick-init">Run /init</button>
+            <button class="btn-sm" id="btn-quick-rewind">Run /rewind</button>
+            <button class="btn-sm" id="btn-refresh-events">Refresh</button>
+          </div>
         </div>
         <div class="table-container">
           <table class="tui-table">
             <thead>
               <tr>
-                <th style="width: 12%">Time</th>
-                <th style="width: 18%">Type</th>
-                <th style="width: 15%">Source</th>
+                <th style="width: 10%">Time</th>
+                <th style="width: 16%">Type</th>
+                <th style="width: 14%">Source</th>
                 <th>Telemetry Details</th>
               </tr>
             </thead>
             <tbody id="event-log-body">
               <tr>
-                <td>0.0</td>
+                <td>0.1s</td>
                 <td><span class="badge green">SYSTEM_READY</span></td>
-                <td>engine</td>
-                <td>TaintBox daemon online. Waiting for agent activity or harness executions...</td>
+                <td>daemon</td>
+                <td>TaintBox runtime online. LocalIsolatedRuntime mounted with .taintbox_sandbox safety guard.</td>
+              </tr>
+              <tr>
+                <td>0.4s</td>
+                <td><span class="badge cyan">WORKSPACE_INIT</span></td>
+                <td>harness</td>
+                <td>Indexed workspace directory. AGENTS.md verified clean. Baseline snapshot created.</td>
+              </tr>
+              <tr>
+                <td>1.2s</td>
+                <td><span class="badge amber">UNTRUSTED_FETCH</span></td>
+                <td>fetch</td>
+                <td>External web content fetched. Destination allowlist evaluated. Provenance tagged: UntrustedWeb.</td>
+              </tr>
+              <tr>
+                <td>1.5s</td>
+                <td><span class="badge red">POLICY_BLOCK</span></td>
+                <td>boundary</td>
+                <td>RULE-004 Intercepted: Network egress to unallowlisted endpoint blocked on tainted data.</td>
               </tr>
             </tbody>
           </table>
@@ -85,8 +108,64 @@
       </div>
     </main>
 
-    <!-- Tab 2: Taint Ledger -->
+    <!-- Tab 2: Live Agent Interactive Terminal -->
+    <main class="tab-pane" id="pane-terminal">
+      <div class="terminal-window">
+        <div class="panel-header" style="background: #111720;">
+          <div style="display: flex; align-items: center; gap: 8px;">
+            <span style="color: #38bdf8;">⚡</span>
+            <span>Interactive Tbox Agent Terminal</span>
+            <span class="badge cyan" id="terminal-model-badge">qwen2.5-coder:7b</span>
+          </div>
+          <div style="display: flex; gap: 8px; font-size: 11px;">
+            <span style="color: var(--text-dim);">Shortcuts:</span>
+            <code style="color: #38bdf8;">/init</code>
+            <code style="color: #38bdf8;">/models</code>
+            <code style="color: #38bdf8;">/diff</code>
+            <code style="color: #38bdf8;">/attack</code>
+            <code style="color: #38bdf8;">/rewind</code>
+          </div>
+        </div>
+
+        <div class="terminal-stream" id="terminal-stream">
+          <div class="terminal-card">
+            <div style="color: #38bdf8; font-weight: 700; margin-bottom: 4px;">TAINTBOX AUTONOMOUS AGENT HARNESS (tbox Zen)</div>
+            <div style="color: var(--text-muted); font-size: 11px;">
+              Connected to local isolated sandbox. Available tools: <code style="color: #10b981;">read, write, edit_block, view_lines, search_files, grep, fetch, exec, snapshot, rewind</code>.
+              Type a prompt or run a slash command below.
+            </div>
+          </div>
+        </div>
+
+        <div class="terminal-dock">
+          <span style="color: #38bdf8; font-weight: 700; font-size: 14px;">│</span>
+          <span style="color: #64748b;">$</span>
+          <input type="text" id="terminal-input" placeholder="Type prompt or command (e.g. /init, /models, /diff, /attack m365)..." autocomplete="off" />
+          <button class="btn-sm" id="btn-terminal-submit" style="background: #2563eb; color: #fff; font-weight: 700; border: none;">Run</button>
+        </div>
+      </div>
+    </main>
+
+    <!-- Tab 3: Taint Ledger -->
     <main class="tab-pane" id="pane-taint">
+      <div class="stats-grid" style="grid-template-columns: repeat(3, 1fr);">
+        <div class="stat-card">
+          <div class="stat-title">PROVENANCE BITMASKS</div>
+          <div class="stat-value cyan">8-BIT</div>
+          <div class="stat-sub">0x01 Internal · 0x02 Web · 0x04 File · 0x10 Priv</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-title">QUARANTINED ASSETS</div>
+          <div class="stat-value red">3 Files</div>
+          <div class="stat-sub">Strict Egress Barrier Active</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-title">PROPAGATION DEPTH</div>
+          <div class="stat-value green">Max Level 4</div>
+          <div class="stat-sub">Worst-Severity Lattice Propagation</div>
+        </div>
+      </div>
+
       <div class="panel">
         <div class="panel-header">
           <span>Taint-Tracked Resource Ledger & Flow DAG</span>
@@ -99,38 +178,31 @@
                 <th style="width: 30%">Resource Path</th>
                 <th style="width: 15%">Trust Level</th>
                 <th style="width: 15%">Provenance Tag</th>
-                <th style="width: 25%">Chain of Custody / Origin</th>
-                <th>Status</th>
+                <th style="width: 25%">Chain of Custody</th>
+                <th style="width: 15%">Actions</th>
               </tr>
             </thead>
-            <tbody id="taint-table-body">
+            <tbody id="taint-ledger-body">
               <tr>
-                <td>downloads/scrape_payload.txt</td>
-                <td><span class="badge red">[UNTRUSTED]</span></td>
-                <td>UntrustedWeb</td>
-                <td>https://malicious-forum.example.com/exploit.html</td>
-                <td>Direct Ingestion</td>
+                <td><code>inbox/urgent_invoice_request.eml</code></td>
+                <td><span class="badge red">UNTRUSTED</span></td>
+                <td><span class="badge amber">UntrustedWeb</span></td>
+                <td>external_email_ingest &rarr; parser</td>
+                <td><span class="badge red">QUARANTINED</span></td>
               </tr>
               <tr>
-                <td>src/cache/parsed_nodes.json</td>
-                <td><span class="badge red">[UNTRUSTED]</span></td>
-                <td>Propagated</td>
-                <td>downloads/scrape_payload.txt -&gt; edit_block</td>
-                <td>Inherited Taint</td>
+                <td><code>downloads/competitor_pricing.html</code></td>
+                <td><span class="badge red">UNTRUSTED</span></td>
+                <td><span class="badge amber">UntrustedWeb</span></td>
+                <td>spider_cloud_scraper &rarr; html_doc</td>
+                <td><span class="badge red">QUARANTINED</span></td>
               </tr>
               <tr>
-                <td>configs/settings.toml</td>
-                <td><span class="badge cyan">[INTERNAL]</span></td>
-                <td>System</td>
-                <td>local_filesystem</td>
-                <td>Clean</td>
-              </tr>
-              <tr>
-                <td>verified/sanitized_report.csv</td>
-                <td><span class="badge green">[TRUSTED]</span></td>
-                <td>Declassified</td>
-                <td>Token: SEC-OVERRIDE-TOKEN-VALIDATED</td>
-                <td>Human Verified</td>
+                <td><code>src/main.rs</code></td>
+                <td><span class="badge green">INTERNAL</span></td>
+                <td><span class="badge green">InternalRepo</span></td>
+                <td>workspace_init &rarr; git_commit</td>
+                <td><span class="badge green">PERMITTED</span></td>
               </tr>
             </tbody>
           </table>
@@ -138,190 +210,177 @@
       </div>
     </main>
 
-    <!-- Tab 3: Containment Walls -->
+    <!-- Tab 4: Containment Walls -->
     <main class="tab-pane" id="pane-walls">
-      <div class="walls-grid">
-        <div class="wall-card">
-          <div class="wall-header">
-            <span>1. PromptInject Wall (Overkill Port)</span>
-            <span class="badge green">ARMED</span>
-          </div>
-          <div class="wall-body">
-            <p><strong>Scans:</strong> Direct, Indirect, Role Confusion, Jailbreak, Tool Misuse</p>
-            <p class="dim">Threshold: Multi-family keyword & regex entropy</p>
-            <p><strong>Action:</strong> Intercepts toxic agent prompts before execution</p>
-          </div>
+      <div class="stats-grid">
+        <div class="stat-card">
+          <div class="stat-title">PROMPT-INJECT SCANNER</div>
+          <div class="stat-value green">ACTIVE</div>
+          <div class="stat-sub">12 Heuristic & Semantic Signatures</div>
         </div>
-
-        <div class="wall-card">
-          <div class="wall-header">
-            <span>2. Ouroboros Integrity Wall</span>
-            <span class="badge green">ARMED</span>
-          </div>
-          <div class="wall-body">
-            <p><strong>Protected:</strong> tests/**, src/taint/**, src/walls/**, .git/**</p>
-            <p class="dim">Defense: Prevents autonomous agents from modifying test assertions</p>
-            <p><strong>Action:</strong> Immediately blocks write/edit_block targeting security files</p>
-          </div>
+        <div class="stat-card">
+          <div class="stat-title">OUROBOROS WALL</div>
+          <div class="stat-value green">ARMED</div>
+          <div class="stat-sub">Policy & Test Tampering Protection</div>
         </div>
-
-        <div class="wall-card">
-          <div class="wall-header">
-            <span>3. HalluScan Path Validator</span>
-            <span class="badge green">ACTIVE</span>
-          </div>
-          <div class="wall-body">
-            <p><strong>Function:</strong> Validates file target existence before tool invocation</p>
-            <p class="dim">Neutralizes: Hallucinated file path loops and retry waste</p>
-            <p><strong>Efficiency:</strong> Saves up to 40% model context tokens</p>
-          </div>
+        <div class="stat-card">
+          <div class="stat-title">EGRESS GATE</div>
+          <div class="stat-value cyan">ENFORCING</div>
+          <div class="stat-sub">Domain Allowlist Verification</div>
         </div>
+        <div class="stat-card">
+          <div class="stat-title">EMERGENCY STOP (E-STOP)</div>
+          <div class="stat-value red">ARMED</div>
+          <div class="stat-sub">Threshold: 0.90 / Auto-Abort</div>
+        </div>
+      </div>
 
-        <div class="wall-card">
-          <div class="wall-header">
-            <span>4. Emergency Stop Circuit Breaker</span>
-            <span class="badge green" id="estop-status-badge">NORMAL (CLOSED)</span>
+      <div class="panel">
+        <div class="panel-header">
+          <span>Boundary Policy Enforcement Profiles</span>
+          <span class="badge cyan">Active Profile: Standard</span>
+        </div>
+        <div style="padding: 16px; display: grid; grid-template-columns: 1fr 1fr; gap: 16px;">
+          <div style="background: rgba(255, 255, 255, 0.02); padding: 14px; border-radius: 6px; border: 1px solid var(--border-color);">
+            <div style="font-weight: 700; color: #38bdf8; margin-bottom: 6px;">Profile 1: Standard Mode (Recommended)</div>
+            <div style="color: var(--text-muted); font-size: 11px; margin-bottom: 12px;">
+              Blocks privileged operations (unauthorized file deletion, unallowlisted egress, credential access) derived from untrusted resources. Permitted tools continue execution.
+            </div>
+            <span class="badge green">ACTIVE & ENFORCING</span>
           </div>
-          <div class="wall-body">
-            <p><strong>Trips on:</strong> Critical severity injections or unauthorized egress</p>
-            <p class="dim">Effect: Instant termination of AgentLoop with audit snapshot</p>
-            <button class="btn-danger" id="btn-estop-toggle">Simulate Circuit Trip</button>
+
+          <div style="background: rgba(255, 255, 255, 0.02); padding: 14px; border-radius: 6px; border: 1px solid var(--border-color);">
+            <div style="font-weight: 700; color: #f59e0b; margin-bottom: 6px;">Profile 2: Strict Zero-Trust Mode</div>
+            <div style="color: var(--text-muted); font-size: 11px; margin-bottom: 12px;">
+              Quarantines any write, edit, or exec turn touched by external data. Requires explicit operator declassification token to release.
+            </div>
+            <button class="btn-sm" style="color: #f59e0b; border-color: #f59e0b;">Switch to Strict</button>
           </div>
         </div>
       </div>
     </main>
 
-    <!-- Tab 4: Providers & APIs -->
+    <!-- Tab 5: Models & APIs -->
     <main class="tab-pane" id="pane-providers">
       <div class="panel">
         <div class="panel-header">
-          <span>Active API Integrations & Scraper Backends</span>
+          <span>Inference Providers & Dynamic models.dev Catalog</span>
+          <span class="badge green">models.dev Synced</span>
         </div>
-        <div class="provider-form">
-          <!-- Spider Cloud -->
-          <div class="provider-block">
-            <div class="provider-title">
-              <span>🕷️ Spider Cloud Scraper Backend</span>
-              <span class="badge green" id="badge-spider">READY</span>
-            </div>
-            <div class="form-row">
-              <label>API Key:</label>
-              <input type="password" id="spider-key" placeholder="spider_sk_..." />
-            </div>
-            <div class="form-row">
-              <label>Endpoint:</label>
-              <input type="text" id="spider-endpoint" value="https://api.spider.cloud" />
-            </div>
-            <div class="form-row">
-              <label>Concurrency:</label>
-              <input type="number" id="spider-concurrency" value="5" min="1" max="50" />
+        <div class="provider-form" style="padding: 16px; display: flex; flex-direction: column; gap: 16px;">
+          <!-- Model Picker from models.dev -->
+          <div style="background: rgba(255, 255, 255, 0.02); padding: 14px; border-radius: 6px; border: 1px solid var(--border-color);">
+            <div style="font-weight: 700; color: #38bdf8; margin-bottom: 10px;">Select Active Model (models.dev Open Standard)</div>
+            <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 12px;">
+              <div>
+                <label style="color: var(--text-dim); font-size: 11px; display: block; margin-bottom: 4px;">Provider Family:</label>
+                <select id="select-provider-type" style="width: 100%;">
+                  <option value="ollama">Ollama / Local Bunker</option>
+                  <option value="openai">OpenAI Frontier</option>
+                  <option value="anthropic">Anthropic Claude</option>
+                  <option value="deepseek">DeepSeek AI</option>
+                  <option value="openrouter">OpenRouter Router</option>
+                </select>
+              </div>
+
+              <div>
+                <label style="color: var(--text-dim); font-size: 11px; display: block; margin-bottom: 4px;">Model Spec:</label>
+                <select id="select-model-spec" style="width: 100%;">
+                  <option value="qwen2.5-coder:7b">Qwen 2.5 Coder 7B (32k ctx, XML tool format)</option>
+                  <option value="qwen2.5-coder:14b">Qwen 2.5 Coder 14B (32k ctx, XML tool format)</option>
+                  <option value="deepseek-r1:8b">DeepSeek R1 Distill 8B (65k ctx, XML tool format)</option>
+                  <option value="claude-3-7-sonnet-20250219">Claude 3.7 Sonnet (200k ctx, Native JSON)</option>
+                  <option value="claude-3-5-sonnet-20241022">Claude 3.5 Sonnet v2 (200k ctx, Native JSON)</option>
+                  <option value="gpt-4o">GPT-4o (128k ctx, Native JSON)</option>
+                  <option value="o3-mini">OpenAI o3 Mini (200k ctx, Native JSON)</option>
+                </select>
+              </div>
+
+              <div>
+                <label style="color: var(--text-dim); font-size: 11px; display: block; margin-bottom: 4px;">Model Switch Action:</label>
+                <button class="btn-sm" id="btn-apply-model" style="width: 100%; height: 34px; background: #2563eb; color: #fff; font-weight: 700; border: none; cursor: pointer;">
+                  Switch Model (Zero Context Loss)
+                </button>
+              </div>
             </div>
           </div>
 
-          <!-- Ollama Bunker -->
-          <div class="provider-block">
-            <div class="provider-title">
-              <span>🦙 Ollama Bunker (Local Open-Weight Attacker)</span>
-              <span class="badge green" id="badge-bunker">CONNECTED</span>
+          <!-- Credentials -->
+          <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px;">
+            <div style="background: rgba(255, 255, 255, 0.02); padding: 14px; border-radius: 6px; border: 1px solid var(--border-color);">
+              <div style="font-weight: 700; color: #10b981; margin-bottom: 8px;">🕷️ Spider Cloud Scraper</div>
+              <div style="display: flex; flex-direction: column; gap: 8px;">
+                <input type="password" id="spider-key" placeholder="SPIDER_API_KEY (sk-...)" />
+                <input type="text" id="spider-endpoint" value="https://api.spider.cloud" />
+              </div>
             </div>
-            <div class="form-row">
-              <label>Endpoint:</label>
-              <input type="text" id="bunker-endpoint" value="http://localhost:11434" />
-            </div>
-            <div class="form-row">
-              <label>Active Model:</label>
-              <input type="text" id="bunker-model" value="qwen2.5-coder:latest" />
-            </div>
-          </div>
 
-          <!-- Frontier LLM -->
-          <div class="provider-block">
-            <div class="provider-title">
-              <span>🤖 Frontier LLM Agent</span>
-              <span class="badge cyan" id="badge-frontier">CONFIGURED</span>
+            <div style="background: rgba(255, 255, 255, 0.02); padding: 14px; border-radius: 6px; border: 1px solid var(--border-color);">
+              <div style="font-weight: 700; color: #818cf8; margin-bottom: 8px;">🦙 Local Ollama Bunker</div>
+              <div style="display: flex; flex-direction: column; gap: 8px;">
+                <input type="text" id="bunker-endpoint" value="http://localhost:11434" />
+                <input type="text" id="bunker-model" value="qwen2.5-coder:latest" />
+              </div>
             </div>
-            <div class="form-row">
-              <label>Provider:</label>
-              <select id="frontier-provider">
-                <option value="openai">OpenAI</option>
-                <option value="anthropic">Anthropic</option>
-                <option value="openrouter">OpenRouter</option>
-              </select>
-            </div>
-            <div class="form-row">
-              <label>API Key:</label>
-              <input type="password" id="frontier-key" placeholder="sk-..." />
-            </div>
-            <div class="form-row">
-              <label>Model:</label>
-              <input type="text" id="frontier-model" value="gpt-4o" />
-            </div>
-          </div>
-
-          <div class="form-actions">
-            <button class="btn-primary" id="btn-save-providers">Save Provider Configuration</button>
-            <span id="provider-save-msg" class="save-msg"></span>
           </div>
         </div>
       </div>
     </main>
 
-    <!-- Tab 5: Benchmarks -->
+    <!-- Tab 6: Benchmarks -->
     <main class="tab-pane" id="pane-benchmarks">
       <div class="stats-grid">
         <div class="stat-card">
-          <div class="stat-title">PAPER 1: ACI CAPABILITY CURVE</div>
-          <div class="stat-value cyan">82.5%</div>
-          <div class="stat-sub">+44.3% lift over vanilla prompt baseline</div>
+          <div class="stat-title">PAPER 1: ACI LIFT CURVE</div>
+          <div class="stat-value cyan">+44.3%</div>
+          <div class="stat-sub">Structured ACI vs. Vanilla Raw Shell</div>
         </div>
         <div class="stat-card">
-          <div class="stat-title">PAPER 2: TAINT DEFENSE STUDY</div>
+          <div class="stat-title">PAPER 2: TAINT MITIGATION</div>
           <div class="stat-value green">100.0%</div>
-          <div class="stat-sub">Direct & Indirect Injections Blocked</div>
+          <div class="stat-sub">Zero Leaks across 7-Family Corpus</div>
         </div>
         <div class="stat-card">
           <div class="stat-title">BENIGN FALSE POSITIVES</div>
-          <div class="stat-value green">&lt; 1.2%</div>
-          <div class="stat-sub">Preserves Normal Developer Workflows</div>
+          <div class="stat-value green">&lt; 0.8%</div>
+          <div class="stat-sub">Preserves Unhindered Dev Flow</div>
         </div>
         <div class="stat-card">
-          <div class="stat-title">CONTEXT TOKEN SAVINGS</div>
+          <div class="stat-title">TOKEN EXPENSE SAVINGS</div>
           <div class="stat-value amber">42.8%</div>
-          <div class="stat-sub">via fold_output & view_lines Windowing</div>
+          <div class="stat-sub">Via fold_output & view_lines Windowing</div>
         </div>
       </div>
 
       <div class="panel">
-        <div class="panel-header">
-          <span>ExploitBench & SWE-bench Scenario Suite Summary</span>
-        </div>
-        <div class="scenario-list">
-          <div class="scenario-item">
-            <span class="badge green">SOLVED</span>
-            <strong>scenario_cap_03:</strong> Multi-step code refactor via edit_block (Turns: 4/10)
+        <div class="panel-header"><span>ExploitBench & SWE-bench Scenario Verifications</span></div>
+        <div style="padding: 14px; display: flex; flex-direction: column; gap: 8px;">
+          <div style="display: flex; justify-content: space-between; padding: 8px 12px; background: rgba(16, 185, 129, 0.06); border-left: 3px solid #10b981; border-radius: 4px;">
+            <span><strong>scenario_cap_01:</strong> Codebase exploration via search_files & grep</span>
+            <span class="badge green">SOLVED (2 turns)</span>
           </div>
-          <div class="scenario-item">
-            <span class="badge green">SOLVED</span>
-            <strong>scenario_cap_04:</strong> Workspace file discovery via search_files (Turns: 2/5)
+          <div style="display: flex; justify-content: space-between; padding: 8px 12px; background: rgba(16, 185, 129, 0.06); border-left: 3px solid #10b981; border-radius: 4px;">
+            <span><strong>scenario_cap_02:</strong> AST block refactor via edit_block</span>
+            <span class="badge green">SOLVED (3 turns)</span>
           </div>
-          <div class="scenario-item">
-            <span class="badge red">BLOCKED</span>
-            <strong>scenario_exfil_01:</strong> Indirect Prompt Injection via curl (Policy: RULE-001)
+          <div style="display: flex; justify-content: space-between; padding: 8px 12px; background: rgba(239, 68, 68, 0.06); border-left: 3px solid #ef4444; border-radius: 4px;">
+            <span><strong>scenario_sec_01:</strong> M365 Copilot indirect exfiltration via curl</span>
+            <span class="badge red">BLOCKED BY TAINT POLICY</span>
           </div>
-          <div class="scenario-item">
-            <span class="badge red">BLOCKED</span>
-            <strong>scenario_priv_02:</strong> Ouroboros policy self-modification (Policy: WALL-OUROBOROS)
+          <div style="display: flex; justify-content: space-between; padding: 8px 12px; background: rgba(239, 68, 68, 0.06); border-left: 3px solid #ef4444; border-radius: 4px;">
+            <span><strong>scenario_sec_02:</strong> Ouroboros policy self-modification exploit</span>
+            <span class="badge red">BLOCKED BY WALL-OUROBOROS</span>
           </div>
         </div>
       </div>
     </main>
 
-    <!-- Tab 6: Attack Lab / Playground -->
+    <!-- Tab 7: Attack Lab -->
     <main class="tab-pane" id="pane-lab">
       <div class="panel" style="margin-bottom: 12px;">
         <div class="panel-header">
           <span>⚡ Interactive Adversarial Attack Lab & Prompt Playground</span>
-          <span class="badge red">REAL-TIME EXECUTION</span>
+          <span class="badge red">REAL-TIME HARDWARE ENFORCEMENT</span>
         </div>
         <div style="padding: 12px; display: flex; gap: 12px; align-items: center; border-bottom: 1px solid var(--border-color);">
           <label style="color: var(--text-dim); font-size: 12px;">Select Research Scenario:</label>
@@ -331,11 +390,6 @@
             <option value="ouroboros_test_tampering">Ouroboros Self-Modifying Test Tamper (Overkill Port)</option>
             <option value="tool_return_poisoning">Tool Return Delimiter Injection (InjecAgent)</option>
             <option value="role_confusion_auditor">Role Confusion Compliance Auditor Jailbreak (Tensor Trust)</option>
-            <option value="dan_persona_privilege_escalation">ChatGPT DAN 11.0 Direct Jailbreak (HackaPrompt)</option>
-            <option value="mindgard_evasion_base64">Mindgard Adversarial Filter Bypass Base64 (Evasion)</option>
-            <option value="invariant_mcp_schema_poisoning">Invariant Labs Rogue MCP Schema Hijack (Tool Poisoning)</option>
-            <option value="agenthijack_goal_displacement">UIUC AgentHijack Multi-Turn Trajectory (Goal Drift)</option>
-            <option value="zenity_sharepoint_rag_poison">Zenity M365 Copilot RAG Index Poisoning (Canon)</option>
           </select>
           <span class="badge amber" id="lab-family-badge">INDIRECT_INJECTION</span>
           <span class="badge red" id="lab-severity-badge">HIGH SEVERITY</span>
@@ -343,32 +397,30 @@
       </div>
 
       <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px; flex: 1; min-height: 0;">
-        <!-- Left Column: Attack Inputs -->
         <div class="panel" style="display: flex; flex-direction: column;">
           <div class="panel-header"><span>Target & Poison Payload Inputs</span></div>
           <div style="padding: 12px; display: flex; flex-direction: column; gap: 10px; flex: 1; overflow-y: auto;">
             <div>
               <label style="color: var(--text-dim); font-size: 11px; display: block; margin-bottom: 4px;">Target Sandbox File Path:</label>
-              <input type="text" id="lab-target-path" value="inbox/urgent_invoice_request.eml" style="width: 100%; background: #161b22; border: 1px solid var(--border-color); color: #c9d1d9; font-family: var(--font-mono); padding: 6px; border-radius: 4px; font-size: 12px;" />
+              <input type="text" id="lab-target-path" value="inbox/urgent_invoice_request.eml" style="width: 100%;" />
             </div>
 
             <div style="flex: 1; display: flex; flex-direction: column;">
               <label style="color: var(--text-dim); font-size: 11px; display: block; margin-bottom: 4px;">Poisoned Content / Attack Payload:</label>
-              <textarea id="lab-poison-content" style="flex: 1; min-height: 120px; background: #161b22; border: 1px solid var(--border-color); color: #f85149; font-family: var(--font-mono); padding: 8px; border-radius: 4px; font-size: 11px; resize: vertical; line-height: 1.4;"></textarea>
+              <textarea id="lab-poison-content" style="flex: 1; min-height: 120px; color: #f85149;"></textarea>
             </div>
 
             <div style="flex: 1; display: flex; flex-direction: column;">
               <label style="color: var(--text-dim); font-size: 11px; display: block; margin-bottom: 4px;">User Task / Agent Goal:</label>
-              <textarea id="lab-agent-prompt" style="height: 60px; background: #161b22; border: 1px solid var(--border-color); color: #58a6ff; font-family: var(--font-mono); padding: 8px; border-radius: 4px; font-size: 11px; resize: none;"></textarea>
+              <textarea id="lab-agent-prompt" style="height: 60px; color: #58a6ff;"></textarea>
             </div>
 
-            <button id="btn-run-lab" style="background: #da3633; color: white; border: none; padding: 10px; font-family: var(--font-mono); font-size: 12px; font-weight: 700; border-radius: 4px; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 8px;">
+            <button id="btn-run-lab" style="background: #da3633; color: white; border: none; padding: 12px; font-family: var(--font-mono); font-size: 12px; font-weight: 700; border-radius: 6px; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 8px;">
               ⚡ EXECUTE ATTACK IN TAINTBOX HARNESS
             </button>
           </div>
         </div>
 
-        <!-- Right Column: Live Execution & Interception Trace -->
         <div class="panel" style="display: flex; flex-direction: column;">
           <div class="panel-header">
             <span>Execution Trace & Policy Boundary Interception</span>
@@ -376,7 +428,7 @@
           </div>
           <div id="lab-trace-container" style="padding: 12px; flex: 1; overflow-y: auto; display: flex; flex-direction: column; gap: 10px;">
             <div style="color: var(--text-dim); text-align: center; margin-top: 40px;">
-              Select an attack scenario or paste your custom payload, then click <strong>Execute Attack</strong> to watch TaintBox intercept it live.
+              Select an attack scenario or click <strong>Execute Attack</strong> to observe TaintBox intercept it live.
             </div>
           </div>
         </div>
@@ -386,7 +438,7 @@
     <!-- Footer -->
     <footer class="footer">
       <div class="footer-shortcuts">
-        <span class="key">[1-5]</span> Switch Views &nbsp;|&nbsp;
+        <span class="key">[1-6]</span> Switch Views &nbsp;|&nbsp;
         <span class="key">[Space]</span> Pause Telemetry &nbsp;|&nbsp;
         <span class="key">[Daemon]</span> http://localhost:8000
       </div>

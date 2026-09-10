@@ -175,13 +175,13 @@ To safeguard agent tools against sophisticated indirect injections, TaintBox inv
 ### Paper 1: Agent-Computer Interface (ACI) & Capability Scaling
 * **Title**: *Evaluating Tool Ergonomics and Context Compression in Autonomous AI Software Engineering*
 * **Core Hypothesis**: Replacing unstructured raw bash shell access with a typed, windowed ACI (`view_lines`, `edit_block`, `search_files`, `snapshot`/`rewind`) improves SWE-bench task completion by `> 30%` while cutting token expenditure by `> 40%`.
-* **Lead Author**: Harsh Rathi (supported by Saathvik Sharma & Ammar Al-Sabti).
+* **Lead Author**: Harsh Rathi (supported by Saathvik & Ammar).
 * **Datasets**: SWE-bench Lite, Terminal-Bench, HumanEval-Rust.
 
 ### Paper 2: Data-Level Taint Tracking & Boundary Containment
 * **Title**: *Provable Containment of Indirect Prompt Injections via Bitmask Taint Ledgers and Sandbox Boundary Enforcement*
 * **Core Hypothesis**: Fine-grained data provenance propagation prevents credential exfiltration and unauthorized workspace modifications from untrusted web feeds with `0%` false positives on standard developer tasks.
-* **Lead Author**: Akshat Singhal (supported by Harsh Rathi & Aryamaan Dhuwalia).
+* **Lead Author**: Akshat (supported by Harsh Rathi & Aryamaan).
 * **Datasets**: AgentDojo, InjecAgent, BIPIA, M365 Indirect Attack Corpus.
 
 ---

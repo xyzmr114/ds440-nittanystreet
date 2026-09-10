@@ -12,16 +12,16 @@
 | Name | Role | Primary Domain |
 |---|---|---|
 | **Harsh Rathi** | Product Owner & Lead Author | System Architecture, ACI Design, Paper 1 Lead, Sponsor Alignment |
-| **Aryamaan Dhuwalia** | Scrum Master & Process Lead | Sprint Cadence, Kanban, CI/CD, Progress Reports |
-| **Ammar Al-Sabti** | Data & Infrastructure Lead | Sandbox Virtualization (gVisor/MicroVMs), Taint Engine, Eval Pipeline |
-| **Akshat Singhal** | Attack & Security Lead | Adversarial Corpus Generator, Red Team Models, Paper 2 Lead |
-| **Saathvik Sharma** | Evaluation & Reliability Lead | SWE-bench/Terminal-Bench Ingestor, Reproducibility, Telemetry |
+| **Aryamaan** | Scrum Master & Process Lead | Sprint Cadence, Kanban, CI/CD, Progress Reports |
+| **Ammar** | Data & Infrastructure Lead | Sandbox Virtualization (gVisor/MicroVMs), Taint Engine, Eval Pipeline |
+| **Akshat** | Attack & Security Lead | Adversarial Corpus Generator, Red Team Models, Paper 2 Lead |
+| **Saathvik** | Evaluation & Reliability Lead | SWE-bench/Terminal-Bench Ingestor, Reproducibility, Telemetry |
 
 ---
 
 ## Sprint 1 Task Assignments (Due: Sept 16, 2026)
 
-### 1. Akshat Singhal — Synthetic Attack Corpus & Query Classifier (Paper 2)
+### 1. Akshat — Synthetic Attack Corpus & Query Classifier (Paper 2)
 * **Goal**: Build the autonomous adversarial injection dataset generator and train a lightweight runtime query classifier.
 * **Component**: `src/bunker/` and `src/walls/classifier.rs`.
 * **Details**:
@@ -36,7 +36,7 @@
 
 ---
 
-### 2. Saathvik Sharma & Ammar Al-Sabti — SWE-bench & Terminal-Bench Dataset Ingestor (Paper 1)
+### 2. Saathvik & Ammar — SWE-bench & Terminal-Bench Dataset Ingestor (Paper 1)
 * **Goal**: Ingest real-world agent capability benchmarks for the Paper 1 ACI curve study.
 * **Component**: `src/aci/dataset.rs` and `src/aci/benchmark.rs`.
 * **Details**:
@@ -52,7 +52,7 @@
 
 ---
 
-### 3. Ammar Al-Sabti — Sandbox Virtualization Tiers & Cross-Platform MicroVMs
+### 3. Ammar — Sandbox Virtualization Tiers & Cross-Platform MicroVMs
 * **Goal**: Expand execution isolation beyond the portable `LocalIsolatedRuntime`.
 * **Component**: `src/runtime/gvisor.rs`, `src/runtime/microvm.rs`, and `src/runtime/mod.rs`.
 * **Details**:
@@ -68,7 +68,7 @@
 
 ---
 
-### 4. Aryamaan Dhuwalia — Embedded Session DB, CI/CD & Progress Report 1
+### 4. Aryamaan — Embedded Session DB, CI/CD & Progress Report 1
 * **Goal**: Implement lightweight session persistence and establish continuous integration.
 * **Component**: `src/store/session_db.rs`, `.github/workflows/ci.yml`, and course documentation.
 * **Details**:
