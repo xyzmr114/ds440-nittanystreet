@@ -1,7 +1,7 @@
 # TaintBox: Team Backlog & Sprint Assignments
 
 **Sprint Cycle:** Sprint 1 — Subsystem Expansion & Data Pipelines  
-**Sprint Deadline:** September 16, 2026 (1-Week Target)  
+**Sprint Deadline:** September 15, 2026 (1-Week Target)  
 **Capstone Group:** (2) Nittany Street — Penn State DS 440  
 **Repository Branch:** `harsh-dev` (Production Merge Target: `main`)  
 
