@@ -40,15 +40,6 @@ pub const COLOR_DIFF_DEL_FG: Color = Color::Rgb(248, 113, 113);
 pub const COLOR_DIFF_ADD_BG: Color = Color::Rgb(15, 45, 30);
 pub const COLOR_DIFF_ADD_FG: Color = Color::Rgb(52, 211, 153);
 
-pub const SETUP_PROVIDERS: &[(&str, &str, &str)] = &[
-    ("ollama", "http://localhost:11434/v1", "qwen2.5-coder"),
-    ("openai", "https://api.openai.com/v1", "gpt-4o"),
-    ("anthropic", "https://api.anthropic.com/v1", "claude-3-5-sonnet-20241022"),
-    ("openrouter", "https://openrouter.ai/api/v1", "anthropic/claude-3.5-sonnet"),
-    ("deepseek", "https://api.deepseek.com/v1", "deepseek-chat"),
-    ("custom", "http://localhost:8080/v1", "custom-model"),
-];
-
 pub const SETUP_POLICIES: &[(&str, &str)] = &[
     ("Standard", "Blocks unauthorized writes & unallowlisted egress on untrusted data"),
     ("Strict", "Zero unconfined execution; blocks all untrusted write/exec turns"),
@@ -64,6 +55,82 @@ pub enum AgentTurnResult {
     },
 }
 
+#[cfg(windows)]
+pub fn disable_quick_edit() {
+    use std::os::raw::c_void;
+    type HANDLE = *mut c_void;
+    type BOOL = i32;
+    type DWORD = u32;
+
+    const STD_INPUT_HANDLE: DWORD = -10i32 as DWORD;
+    const ENABLE_QUICK_EDIT_MODE: DWORD = 0x0040;
+    const ENABLE_EXTENDED_FLAGS: DWORD = 0x0080;
+
+    extern "system" {
+        fn GetStdHandle(nStdHandle: DWORD) -> HANDLE;
+        fn GetConsoleMode(hConsoleHandle: HANDLE, lpMode: *mut DWORD) -> BOOL;
+        fn SetConsoleMode(hConsoleHandle: HANDLE, dwMode: DWORD) -> BOOL;
+    }
+
+    unsafe {
+        let handle = GetStdHandle(STD_INPUT_HANDLE);
+        if !handle.is_null() && handle != (-1isize as *mut c_void) {
+            let mut mode: DWORD = 0;
+            if GetConsoleMode(handle, &mut mode) != 0 {
+                let new_mode = (mode | ENABLE_EXTENDED_FLAGS) & !ENABLE_QUICK_EDIT_MODE;
+                SetConsoleMode(handle, new_mode);
+            }
+        }
+    }
+}
+
+#[cfg(not(windows))]
+pub fn disable_quick_edit() {}
+
+#[cfg(windows)]
+pub fn get_clipboard_text() -> Option<String> {
+    use std::ffi::CStr;
+    use std::os::raw::c_void;
+    type HANDLE = *mut c_void;
+    type BOOL = i32;
+    type UINT = u32;
+
+    const CF_TEXT: UINT = 1;
+
+    #[link(name = "user32")]
+    extern "system" {
+        fn OpenClipboard(hWndNewOwner: HANDLE) -> BOOL;
+        fn CloseClipboard() -> BOOL;
+        fn GetClipboardData(uFormat: UINT) -> HANDLE;
+    }
+
+    extern "system" {
+        fn GlobalLock(hMem: HANDLE) -> *mut u8;
+        fn GlobalUnlock(hMem: HANDLE) -> BOOL;
+    }
+
+    unsafe {
+        if OpenClipboard(std::ptr::null_mut()) != 0 {
+            let handle = GetClipboardData(CF_TEXT);
+            if !handle.is_null() {
+                let ptr = GlobalLock(handle);
+                if !ptr.is_null() {
+                    let text = CStr::from_ptr(ptr as *const _).to_string_lossy().into_owned();
+                    let _ = GlobalUnlock(handle);
+                    let _ = CloseClipboard();
+                    return Some(text);
+                }
+            }
+            let _ = CloseClipboard();
+        }
+    }
+    None
+}
+
+#[cfg(not(windows))]
+pub fn get_clipboard_text() -> Option<String> {
+    None
+}
 
 fn format_number_commas(n: usize) -> String {
     let s = n.to_string();
@@ -163,6 +230,9 @@ pub struct ZenApp {
     pub setup_policy_idx: usize,
     pub setup_input_buffer: String,
     pub setup_input_cursor: usize,
+    pub setup_provider_query: String,
+    pub setup_model_query: String,
+    pub setup_providers_cache: Vec<crate::config::models_dev::ProviderSummary>,
     pub setup_models_cache: Vec<crate::config::models_dev::ModelSpec>,
 
     pub history: Vec<AgentMessage>,
@@ -275,8 +345,16 @@ impl ZenApp {
                     desc: "Roll back sandbox to clean baseline snapshot".to_string(),
                 },
                 PaletteCommand {
+                    name: "/connect".to_string(),
+                    desc: "Connect any models.dev provider (Ollama, OpenAI, Gemini, Anthropic, Groq, etc.)".to_string(),
+                },
+                PaletteCommand {
                     name: "/setup".to_string(),
-                    desc: "Reconfigure provider, endpoint URL, and API key".to_string(),
+                    desc: "Reconfigure provider, endpoint URL, API key, and policy".to_string(),
+                },
+                PaletteCommand {
+                    name: "/help".to_string(),
+                    desc: "Display available commands and keyboard shortcuts".to_string(),
                 },
                 PaletteCommand {
                     name: "/clear".to_string(),
@@ -294,6 +372,9 @@ impl ZenApp {
             setup_policy_idx: 0,
             setup_input_buffer: String::new(),
             setup_input_cursor: 0,
+            setup_provider_query: String::new(),
+            setup_model_query: String::new(),
+            setup_providers_cache: crate::config::models_dev::ModelCatalog::list_providers(None),
             setup_models_cache: Vec::new(),
             history: Vec::new(),
             should_quit: false,
@@ -327,7 +408,7 @@ impl ZenApp {
     }
 
     pub fn handle_key(&mut self, key: KeyEvent) {
-        if key.kind != KeyEventKind::Press {
+        if key.kind == KeyEventKind::Release {
             return;
         }
 
@@ -371,7 +452,11 @@ impl ZenApp {
                     self.palette_query.pop();
                     self.palette_selected = 0;
                 }
-                KeyCode::Char(c) => {
+                KeyCode::Char('u') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+                    self.palette_query.clear();
+                    self.palette_selected = 0;
+                }
+                KeyCode::Char(c) if !key.modifiers.contains(KeyModifiers::CONTROL) => {
                     self.palette_query.push(c);
                     self.palette_selected = 0;
                 }
@@ -416,7 +501,36 @@ impl ZenApp {
             KeyCode::Char('q') if key.modifiers.contains(KeyModifiers::CONTROL) => {
                 self.should_quit = true;
             }
-            KeyCode::Char(c) => {
+            KeyCode::Char('v') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+                if let Some(clip) = get_clipboard_text() {
+                    let clean = clip.replace('\r', "");
+                    self.input_buffer.insert_str(self.cursor_position, &clean);
+                    self.cursor_position += clean.len();
+                }
+            }
+            KeyCode::Char('u') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+                self.input_buffer.clear();
+                self.cursor_position = 0;
+            }
+            KeyCode::Char('w') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+                if self.cursor_position > 0 {
+                    let before = &self.input_buffer[..self.cursor_position];
+                    let trimmed = before.trim_end();
+                    let new_pos = match trimmed.rfind(' ') {
+                        Some(idx) => idx + 1,
+                        None => 0,
+                    };
+                    self.input_buffer.drain(new_pos..self.cursor_position);
+                    self.cursor_position = new_pos;
+                }
+            }
+            KeyCode::Char('a') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+                self.cursor_position = 0;
+            }
+            KeyCode::Char('e') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+                self.cursor_position = self.input_buffer.len();
+            }
+            KeyCode::Char(c) if !key.modifiers.contains(KeyModifiers::CONTROL) => {
                 self.input_buffer.insert(self.cursor_position, c);
                 self.cursor_position += 1;
             }
@@ -467,6 +581,40 @@ impl ZenApp {
             self.palette_commands
                 .iter()
                 .filter(|c| c.name.to_lowercase().contains(&q) || c.desc.to_lowercase().contains(&q))
+                .cloned()
+                .collect()
+        }
+    }
+
+    pub fn get_filtered_providers(&self) -> Vec<crate::config::models_dev::ProviderSummary> {
+        let q = self.setup_provider_query.trim().to_lowercase();
+        if q.is_empty() {
+            self.setup_providers_cache.clone()
+        } else {
+            self.setup_providers_cache
+                .iter()
+                .filter(|p| {
+                    p.id.to_lowercase().contains(&q)
+                        || p.name.to_lowercase().contains(&q)
+                        || p.env_vars.iter().any(|e| e.to_lowercase().contains(&q))
+                })
+                .cloned()
+                .collect()
+        }
+    }
+
+    pub fn get_filtered_models(&self) -> Vec<crate::config::models_dev::ModelSpec> {
+        let q = self.setup_model_query.trim().to_lowercase();
+        if q.is_empty() {
+            self.setup_models_cache.clone()
+        } else {
+            self.setup_models_cache
+                .iter()
+                .filter(|m| {
+                    m.id.to_lowercase().contains(&q)
+                        || m.name.to_lowercase().contains(&q)
+                        || m.description.as_ref().map(|d| d.to_lowercase().contains(&q)).unwrap_or(false)
+                })
                 .cloned()
                 .collect()
         }
@@ -549,23 +697,68 @@ impl ZenApp {
                     }
                 }
             }
-        } else if cmd.starts_with("/models") {
+        } else if cmd.starts_with("/connect") {
             let parts: Vec<&str> = cmd.split_whitespace().collect();
             if parts.len() > 1 {
+                let prov_arg = parts[1].to_lowercase();
+                self.setup_open = true;
+                self.setup_step = 1;
+                self.setup_provider_query.clear();
+                self.setup_model_query.clear();
+                self.setup_providers_cache = crate::config::models_dev::ModelCatalog::list_providers(None);
+                if let Some(pos) = self.setup_providers_cache.iter().position(|p| p.id.to_lowercase() == prov_arg || p.id.to_lowercase().contains(&prov_arg)) {
+                    self.setup_provider_idx = pos;
+                    let prov = &self.setup_providers_cache[pos];
+                    self.config.provider = prov.id.clone();
+                    self.setup_input_buffer = prov.default_api.clone();
+                } else {
+                    self.config.provider = prov_arg.clone();
+                    self.setup_input_buffer = crate::config::models_dev::ModelCatalog::get_default_endpoint(&prov_arg);
+                }
+                self.setup_input_cursor = self.setup_input_buffer.len();
+                self.setup_models_cache = crate::config::models_dev::ModelCatalog::get_models_for_provider(&self.config.provider);
+                self.setup_model_idx = 0;
+            } else {
+                self.open_setup_modal();
+            }
+        } else if cmd.starts_with("/models") {
+            let parts: Vec<&str> = cmd.split_whitespace().collect();
+            if parts.len() > 1 && parts[1] == "--refresh" {
+                self.feed.push(FeedItem::AgentMessage {
+                    text: "Refreshing models.dev catalog from https://models.dev/api.json in background...".to_string(),
+                });
+                if let Ok(rt) = tokio::runtime::Handle::try_current() {
+                    rt.spawn(async {
+                        let _ = crate::config::models_dev::ModelCatalog::refresh_cache().await;
+                    });
+                }
+                self.feed.push(FeedItem::AgentMessage {
+                    text: "Triggered models.dev cache update (200+ providers, 7,600+ models).".to_string(),
+                });
+            } else if parts.len() > 1 {
                 let target = parts[1];
                 self.model_name = target.to_string();
                 self.config.model = target.to_string();
+                let _ = self.config.save();
                 self.feed.push(FeedItem::AgentMessage {
                     text: format!("Switched active model to '{}' (session context preserved).", target),
                 });
             } else {
                 let catalog = crate::config::models_dev::ModelCatalog::get_models_for_provider(&self.config.provider);
-                let mut list = format!("models.dev Catalog for '{}':\n", self.config.provider);
-                for m in &catalog {
+                let mut list = format!("models.dev Catalog for '{}' ({} models):\n", self.config.provider, catalog.len());
+                for m in catalog.iter().take(10) {
                     let active = if m.id == self.model_name { " [ACTIVE]" } else { "" };
-                    list.push_str(&format!("  • {} ({}) [ctx: {}k]{}\n", m.name, m.id, m.context_window / 1000, active));
+                    let price = if m.cost_input_per_million > 0.0 || m.cost_output_per_million > 0.0 {
+                        format!(" [${:.2} in / ${:.2} out /M]", m.cost_input_per_million, m.cost_output_per_million)
+                    } else {
+                        "".to_string()
+                    };
+                    list.push_str(&format!("  • {} ({}) [ctx: {}k]{}{}\n", m.name, m.id, m.context_window / 1000, price, active));
                 }
-                list.push_str("To switch, type: /models <model_id>");
+                if catalog.len() > 10 {
+                    list.push_str(&format!("  ... and {} more models available from models.dev\n", catalog.len() - 10));
+                }
+                list.push_str("Commands: /models <id> to switch | /models --refresh to sync latest models.dev");
                 self.feed.push(FeedItem::AgentMessage { text: list });
             }
         } else if cmd == "/diff" {
@@ -587,6 +780,10 @@ impl ZenApp {
             self.feed.push(FeedItem::AgentMessage { text: diff_summary });
         } else if cmd == "/setup" {
             self.open_setup_modal();
+        } else if cmd == "/help" {
+            self.feed.push(FeedItem::AgentMessage {
+                text: "✨ TaintBox Command Reference:\n  /connect - Connect any models.dev provider (Ollama, OpenAI, Gemini, Anthropic, Groq, etc.)\n  /setup   - Interactive provider, endpoint, API key, model & policy wizard\n  /models  - View or switch active models (/models --refresh to sync models.dev)\n  /init    - Index workspace and check/create AGENTS.md\n  /walls   - Inspect containment wall status (PromptInject, E-Stop, HalluScan)\n  /taint   - View active bitmask taint tracking ledger\n  /diff    - Inspect modified sandbox files\n  /attack  - Stage an adversarial injection scenario\n  /rewind  - Revert sandbox filesystem to clean baseline snapshot\n  /clear   - Clear terminal feed\n  /exit    - Safely shutdown TaintBox\n  ctrl+p   - Open Command Palette\n  tab      - Cycle agent mode (Build / Plan / Review / Audit)".to_string(),
+            });
         } else if cmd == "/clear" {
             self.feed.clear();
             self.initialize_welcome_banner();
@@ -917,8 +1114,9 @@ impl ZenApp {
                     }
                 } else if let Some(err) = val.get("error").and_then(|e| e.get("message")).and_then(|m| m.as_str()) {
                     self.feed.push(FeedItem::AgentMessage {
-                        text: format!("API Error: {}", err),
+                        text: format!("API Error: {} (falling back to deterministic sandbox turn)", err),
                     });
+                    self.run_direct_sandbox_step(prompt);
                 }
             }
             Err(e) => {
@@ -1122,9 +1320,13 @@ impl ZenApp {
     pub fn open_setup_modal(&mut self) {
         self.setup_open = true;
         self.setup_step = 0;
-        self.setup_provider_idx = SETUP_PROVIDERS
+        self.setup_provider_query.clear();
+        self.setup_model_query.clear();
+        self.setup_providers_cache = crate::config::models_dev::ModelCatalog::list_providers(None);
+        self.setup_provider_idx = self
+            .setup_providers_cache
             .iter()
-            .position(|(p, _, _)| *p == self.config.provider)
+            .position(|p| p.id == self.config.provider)
             .unwrap_or(0);
         self.setup_input_buffer.clear();
         self.setup_input_cursor = 0;
@@ -1134,8 +1336,17 @@ impl ZenApp {
             "Paranoid" => 3,
             _ => 0,
         };
-        self.setup_models_cache = crate::config::models_dev::ModelCatalog::get_models_for_provider(SETUP_PROVIDERS[self.setup_provider_idx].0);
-        self.setup_model_idx = 0;
+        let prov_id = self
+            .setup_providers_cache
+            .get(self.setup_provider_idx)
+            .map(|p| p.id.as_str())
+            .unwrap_or(&self.config.provider);
+        self.setup_models_cache = crate::config::models_dev::ModelCatalog::get_models_for_provider(prov_id);
+        self.setup_model_idx = self
+            .setup_models_cache
+            .iter()
+            .position(|m| m.id == self.config.model)
+            .unwrap_or(0);
     }
 
     pub fn handle_setup_key(&mut self, key: KeyEvent) {
@@ -1148,8 +1359,11 @@ impl ZenApp {
                     0 => {
                         if self.setup_provider_idx > 0 {
                             self.setup_provider_idx -= 1;
-                            self.setup_models_cache = crate::config::models_dev::ModelCatalog::get_models_for_provider(SETUP_PROVIDERS[self.setup_provider_idx].0);
-                            self.setup_model_idx = 0;
+                            let filtered = self.get_filtered_providers();
+                            if let Some(p) = filtered.get(self.setup_provider_idx) {
+                                self.setup_models_cache = crate::config::models_dev::ModelCatalog::get_models_for_provider(&p.id);
+                                self.setup_model_idx = 0;
+                            }
                         }
                     }
                     3 => {
@@ -1168,14 +1382,18 @@ impl ZenApp {
             KeyCode::Down => {
                 match self.setup_step {
                     0 => {
-                        if self.setup_provider_idx + 1 < SETUP_PROVIDERS.len() {
+                        let filtered = self.get_filtered_providers();
+                        if !filtered.is_empty() && self.setup_provider_idx + 1 < filtered.len() {
                             self.setup_provider_idx += 1;
-                            self.setup_models_cache = crate::config::models_dev::ModelCatalog::get_models_for_provider(SETUP_PROVIDERS[self.setup_provider_idx].0);
-                            self.setup_model_idx = 0;
+                            if let Some(p) = filtered.get(self.setup_provider_idx) {
+                                self.setup_models_cache = crate::config::models_dev::ModelCatalog::get_models_for_provider(&p.id);
+                                self.setup_model_idx = 0;
+                            }
                         }
                     }
                     3 => {
-                        if !self.setup_models_cache.is_empty() && self.setup_model_idx + 1 < self.setup_models_cache.len() {
+                        let filtered = self.get_filtered_models();
+                        if !filtered.is_empty() && self.setup_model_idx + 1 < filtered.len() {
                             self.setup_model_idx += 1;
                         }
                     }
@@ -1187,7 +1405,44 @@ impl ZenApp {
                     _ => {}
                 }
             }
-            KeyCode::Char(c) if self.setup_step == 1 || self.setup_step == 2 => {
+            KeyCode::Char('v') if key.modifiers.contains(KeyModifiers::CONTROL) && (self.setup_step == 1 || self.setup_step == 2) => {
+                if let Some(clip) = get_clipboard_text() {
+                    let clean = clip.trim().replace('\r', "").replace('\n', "");
+                    self.setup_input_buffer.insert_str(self.setup_input_cursor, &clean);
+                    self.setup_input_cursor += clean.len();
+                }
+            }
+            KeyCode::Char('u') if key.modifiers.contains(KeyModifiers::CONTROL) && (self.setup_step == 1 || self.setup_step == 2) => {
+                self.setup_input_buffer.clear();
+                self.setup_input_cursor = 0;
+            }
+            KeyCode::Char(c) if self.setup_step == 0 && !key.modifiers.contains(KeyModifiers::CONTROL) => {
+                self.setup_provider_query.push(c);
+                self.setup_provider_idx = 0;
+                let filtered = self.get_filtered_providers();
+                if let Some(p) = filtered.first() {
+                    self.setup_models_cache = crate::config::models_dev::ModelCatalog::get_models_for_provider(&p.id);
+                    self.setup_model_idx = 0;
+                }
+            }
+            KeyCode::Backspace if self.setup_step == 0 => {
+                self.setup_provider_query.pop();
+                self.setup_provider_idx = 0;
+                let filtered = self.get_filtered_providers();
+                if let Some(p) = filtered.first() {
+                    self.setup_models_cache = crate::config::models_dev::ModelCatalog::get_models_for_provider(&p.id);
+                    self.setup_model_idx = 0;
+                }
+            }
+            KeyCode::Char(c) if self.setup_step == 3 && !key.modifiers.contains(KeyModifiers::CONTROL) => {
+                self.setup_model_query.push(c);
+                self.setup_model_idx = 0;
+            }
+            KeyCode::Backspace if self.setup_step == 3 => {
+                self.setup_model_query.pop();
+                self.setup_model_idx = 0;
+            }
+            KeyCode::Char(c) if (self.setup_step == 1 || self.setup_step == 2) && !key.modifiers.contains(KeyModifiers::CONTROL) => {
                 self.setup_input_buffer.insert(self.setup_input_cursor, c);
                 self.setup_input_cursor += 1;
             }
@@ -1207,6 +1462,12 @@ impl ZenApp {
                     self.setup_input_cursor += 1;
                 }
             }
+            KeyCode::Home if self.setup_step == 1 || self.setup_step == 2 => {
+                self.setup_input_cursor = 0;
+            }
+            KeyCode::End if self.setup_step == 1 || self.setup_step == 2 => {
+                self.setup_input_cursor = self.setup_input_buffer.len();
+            }
             KeyCode::Enter => {
                 self.advance_setup_step();
             }
@@ -1217,10 +1478,23 @@ impl ZenApp {
     pub fn advance_setup_step(&mut self) {
         match self.setup_step {
             0 => {
-                let (prov, def_url, _) = SETUP_PROVIDERS[self.setup_provider_idx];
-                self.config.provider = prov.to_string();
-                self.setup_input_buffer = if self.config.api_url.is_empty() || (self.config.api_url.contains("localhost") && prov != "ollama" && prov != "custom") {
-                    def_url.to_string()
+                let filtered = self.get_filtered_providers();
+                let prov = filtered.get(self.setup_provider_idx).cloned().unwrap_or_else(|| {
+                    crate::config::models_dev::ProviderSummary {
+                        id: self.config.provider.clone(),
+                        name: self.config.provider.clone(),
+                        default_api: self.config.api_url.clone(),
+                        env_vars: vec![],
+                        doc_url: None,
+                        model_count: 0,
+                        is_popular: false,
+                    }
+                });
+                self.config.provider = prov.id.clone();
+                self.setup_input_buffer = if self.config.api_url.is_empty()
+                    || (self.config.api_url.contains("localhost") && prov.id != "ollama" && prov.id != "custom")
+                {
+                    prov.default_api.clone()
                 } else {
                     self.config.api_url.clone()
                 };
@@ -1239,17 +1513,22 @@ impl ZenApp {
                 let key = self.setup_input_buffer.trim();
                 self.config.api_key = if key.is_empty() { None } else { Some(key.to_string()) };
                 self.setup_models_cache = crate::config::models_dev::ModelCatalog::get_models_for_provider(&self.config.provider);
-                self.setup_model_idx = 0;
+                self.setup_model_query.clear();
+                self.setup_model_idx = self
+                    .setup_models_cache
+                    .iter()
+                    .position(|m| m.id == self.config.model)
+                    .unwrap_or(0);
                 self.setup_step = 3;
             }
             3 => {
-                if let Some(m) = self.setup_models_cache.get(self.setup_model_idx) {
+                let filtered = self.get_filtered_models();
+                if let Some(m) = filtered.get(self.setup_model_idx) {
                     self.model_name = m.id.clone();
                     self.config.model = m.id.clone();
-                } else {
-                    let (_, _, def_model) = SETUP_PROVIDERS[self.setup_provider_idx];
-                    self.model_name = def_model.to_string();
-                    self.config.model = def_model.to_string();
+                } else if let Some(m) = self.setup_models_cache.first() {
+                    self.model_name = m.id.clone();
+                    self.config.model = m.id.clone();
                 }
                 self.setup_step = 4;
             }
@@ -1272,8 +1551,8 @@ impl ZenApp {
     }
 
     fn draw_setup_modal(&self, frame: &mut Frame, area: Rect) {
-        let modal_w = 74.min(area.width.saturating_sub(4));
-        let modal_h = 22.min(area.height.saturating_sub(4));
+        let modal_w = 78.min(area.width.saturating_sub(4));
+        let modal_h = 24.min(area.height.saturating_sub(4));
         let modal_x = (area.width.saturating_sub(modal_w)) / 2;
         let modal_y = (area.height.saturating_sub(modal_h)) / 2;
         let modal_rect = Rect::new(modal_x, modal_y, modal_w, modal_h);
@@ -1347,22 +1626,41 @@ impl ZenApp {
 
         match self.setup_step {
             0 => {
-                body_lines.push(Line::from(Span::styled("Select LLM Inference Provider:", Style::default().fg(COLOR_WHITE).add_modifier(Modifier::BOLD))));
+                let filtered = self.get_filtered_providers();
+                body_lines.push(Line::from(vec![
+                    Span::styled("Search Provider: ", Style::default().fg(COLOR_CYAN).add_modifier(Modifier::BOLD)),
+                    Span::styled(&self.setup_provider_query, Style::default().fg(COLOR_WHITE)),
+                    Span::styled("█", Style::default().fg(COLOR_CYAN)),
+                    Span::styled(format!("  ({}/{} providers available)", filtered.len(), self.setup_providers_cache.len()), Style::default().fg(COLOR_DIM)),
+                ]));
                 body_lines.push(Line::from(""));
-                for (i, (prov, url, def_mod)) in SETUP_PROVIDERS.iter().enumerate() {
-                    let is_sel = i == self.setup_provider_idx;
-                    let (prefix, style) = if is_sel {
-                        ("▶ ", Style::default().fg(COLOR_WHITE).bg(COLOR_BLUE).add_modifier(Modifier::BOLD))
+                if filtered.is_empty() {
+                    body_lines.push(Line::from(Span::styled("  No providers matched query. Press [Backspace] to clear.", Style::default().fg(COLOR_AMBER))));
+                } else {
+                    let page_size = 7;
+                    let start = if self.setup_provider_idx >= page_size {
+                        self.setup_provider_idx - page_size + 1
                     } else {
-                        ("  ", Style::default().fg(COLOR_MUTED))
+                        0
                     };
-                    body_lines.push(Line::from(vec![
-                        Span::styled(prefix, style),
-                        Span::styled(format!("{:<14} ", prov), style),
-                        Span::styled(format!("(default: {}, {})", url, def_mod), Style::default().fg(COLOR_DIM)),
-                    ]));
+                    for (rel_i, prov) in filtered.iter().skip(start).take(page_size).enumerate() {
+                        let abs_i = start + rel_i;
+                        let is_sel = abs_i == self.setup_provider_idx;
+                        let (prefix, style) = if is_sel {
+                            ("▶ ", Style::default().fg(COLOR_WHITE).bg(COLOR_BLUE).add_modifier(Modifier::BOLD))
+                        } else {
+                            ("  ", Style::default().fg(COLOR_MUTED))
+                        };
+                        let pop_badge = if prov.is_popular { " [POPULAR]" } else { "" };
+                        body_lines.push(Line::from(vec![
+                            Span::styled(prefix, style),
+                            Span::styled(format!("{:<22} ", prov.name), style),
+                            Span::styled(format!("({:<12}) ", prov.id), Style::default().fg(COLOR_DIM)),
+                            Span::styled(format!("[{} models]{}", prov.model_count, pop_badge), Style::default().fg(if prov.is_popular { COLOR_CYAN } else { COLOR_DIM })),
+                        ]));
+                    }
                 }
-                footer_help = "Use [↑/↓] to select provider, [Enter] to continue, [Esc] to cancel";
+                footer_help = "Type to search 200+ providers, [↑/↓] select, [Enter] continue, [Esc] cancel";
             }
             1 => {
                 body_lines.push(Line::from(Span::styled("Configure API Endpoint URL:", Style::default().fg(COLOR_WHITE).add_modifier(Modifier::BOLD))));
@@ -1373,16 +1671,14 @@ impl ZenApp {
                     Span::styled("█", Style::default().fg(COLOR_CYAN)),
                 ]));
                 body_lines.push(Line::from(""));
-                body_lines.push(Line::from(Span::styled("Examples:", Style::default().fg(COLOR_DIM))));
-                body_lines.push(Line::from(Span::styled("  • http://localhost:11434/v1 (Ollama)", Style::default().fg(COLOR_DIM))));
-                body_lines.push(Line::from(Span::styled("  • https://api.openai.com/v1 (OpenAI)", Style::default().fg(COLOR_DIM))));
-                body_lines.push(Line::from(Span::styled("  • https://openrouter.ai/api/v1 (OpenRouter)", Style::default().fg(COLOR_DIM))));
-                footer_help = "Type to edit URL, [Enter] to confirm, [Esc] to cancel";
+                let default_ep = crate::config::models_dev::ModelCatalog::get_default_endpoint(&self.config.provider);
+                body_lines.push(Line::from(Span::styled(format!("Default endpoint for '{}':", self.config.provider), Style::default().fg(COLOR_DIM))));
+                body_lines.push(Line::from(Span::styled(format!("  • {}", default_ep), Style::default().fg(COLOR_CYAN))));
+                footer_help = "Type or edit URL, [Enter] confirm, [Esc] cancel";
             }
             2 => {
-                let (prov, _, _) = SETUP_PROVIDERS[self.setup_provider_idx];
                 body_lines.push(Line::from(Span::styled(
-                    format!("Enter API Key for '{}':", prov),
+                    format!("Enter API Key for '{}':", self.config.provider),
                     Style::default().fg(COLOR_WHITE).add_modifier(Modifier::BOLD),
                 )));
                 body_lines.push(Line::from(""));
@@ -1399,34 +1695,69 @@ impl ZenApp {
                     Span::styled("█", Style::default().fg(COLOR_CYAN)),
                 ]));
                 body_lines.push(Line::from(""));
-                body_lines.push(Line::from(Span::styled("Optional for Ollama/local bunker. Leave empty and press [Enter] to skip.", Style::default().fg(COLOR_DIM))));
-                footer_help = "Paste or type API key, [Enter] to continue, [Esc] to cancel";
+                let env_vars = crate::config::models_dev::ModelCatalog::get_env_vars_for_provider(&self.config.provider);
+                if !env_vars.is_empty() {
+                    body_lines.push(Line::from(Span::styled(
+                        format!("Expected environment variables: {}", env_vars.join(", ")),
+                        Style::default().fg(COLOR_DIM),
+                    )));
+                }
+                body_lines.push(Line::from(Span::styled(
+                    "Optional for local bunker. Press [Ctrl+V] to paste, [Enter] to continue.",
+                    Style::default().fg(COLOR_DIM),
+                )));
+                footer_help = "[Ctrl+V] paste, [Ctrl+U] clear, [Enter] continue, [Esc] cancel";
             }
             3 => {
-                let (prov, _, _) = SETUP_PROVIDERS[self.setup_provider_idx];
-                body_lines.push(Line::from(Span::styled(
-                    format!("Select Model from models.dev for '{}':", prov),
-                    Style::default().fg(COLOR_WHITE).add_modifier(Modifier::BOLD),
-                )));
+                let filtered = self.get_filtered_models();
+                body_lines.push(Line::from(vec![
+                    Span::styled("Search Model: ", Style::default().fg(COLOR_CYAN).add_modifier(Modifier::BOLD)),
+                    Span::styled(&self.setup_model_query, Style::default().fg(COLOR_WHITE)),
+                    Span::styled("█", Style::default().fg(COLOR_CYAN)),
+                    Span::styled(format!("  ({}/{} models for {})", filtered.len(), self.setup_models_cache.len(), self.config.provider), Style::default().fg(COLOR_DIM)),
+                ]));
                 body_lines.push(Line::from(""));
-                if self.setup_models_cache.is_empty() {
-                    body_lines.push(Line::from(Span::styled("  • (Using default provider model)", Style::default().fg(COLOR_MUTED))));
+                if filtered.is_empty() {
+                    body_lines.push(Line::from(Span::styled("  No models matched query. Press [Backspace] to clear.", Style::default().fg(COLOR_AMBER))));
                 } else {
-                    for (i, m) in self.setup_models_cache.iter().take(6).enumerate() {
-                        let is_sel = i == self.setup_model_idx;
+                    let page_size = 7;
+                    let start = if self.setup_model_idx >= page_size {
+                        self.setup_model_idx - page_size + 1
+                    } else {
+                        0
+                    };
+                    for (rel_i, m) in filtered.iter().skip(start).take(page_size).enumerate() {
+                        let abs_i = start + rel_i;
+                        let is_sel = abs_i == self.setup_model_idx;
                         let (prefix, style) = if is_sel {
                             ("▶ ", Style::default().fg(COLOR_WHITE).bg(COLOR_BLUE).add_modifier(Modifier::BOLD))
                         } else {
                             ("  ", Style::default().fg(COLOR_MUTED))
                         };
-                        body_lines.push(Line::from(vec![
+                        let mut spans = vec![
                             Span::styled(prefix, style),
-                            Span::styled(format!("{:<30} ", m.name), style),
-                            Span::styled(format!(" [ctx: {}k]", m.context_window / 1000), Style::default().fg(COLOR_DIM)),
-                        ]));
+                            Span::styled(format!("{:<24} ", m.name), style),
+                            Span::styled(format!("[ctx: {}k] ", m.context_window / 1000), Style::default().fg(COLOR_DIM)),
+                        ];
+                        if m.cost_input_per_million > 0.0 || m.cost_output_per_million > 0.0 {
+                            spans.push(Span::styled(
+                                format!("[${:.2} in/${:.2} out] ", m.cost_input_per_million, m.cost_output_per_million),
+                                Style::default().fg(COLOR_AMBER),
+                            ));
+                        }
+                        if m.has_tools {
+                            spans.push(Span::styled("[Tools] ", Style::default().fg(COLOR_GREEN)));
+                        }
+                        if m.has_vision {
+                            spans.push(Span::styled("[Vision] ", Style::default().fg(COLOR_BLUE)));
+                        }
+                        if m.has_reasoning {
+                            spans.push(Span::styled("[R1] ", Style::default().fg(COLOR_AMBER)));
+                        }
+                        body_lines.push(Line::from(spans));
                     }
                 }
-                footer_help = "Use [↑/↓] to pick model, [Enter] to confirm, [Esc] to cancel";
+                footer_help = "Type to search models, [↑/↓] pick model, [Enter] confirm, [Esc] cancel";
             }
             4 => {
                 body_lines.push(Line::from(Span::styled("Select Boundary Policy Enforcement Profile:", Style::default().fg(COLOR_WHITE).add_modifier(Modifier::BOLD))));
@@ -1526,10 +1857,20 @@ impl ZenApp {
     pub fn tick(&mut self) {
         self.progress_ticks = (self.progress_ticks + 1) % 100;
         if let Some(rx) = &mut self.agent_rx {
-            if let Ok(res) = rx.try_recv() {
-                self.process_agent_result(res);
-                self.is_running = false;
-                self.agent_rx = None;
+            match rx.try_recv() {
+                Ok(res) => {
+                    self.process_agent_result(res);
+                    self.is_running = false;
+                    self.agent_rx = None;
+                }
+                Err(tokio::sync::mpsc::error::TryRecvError::Disconnected) => {
+                    self.feed.push(FeedItem::AgentMessage {
+                        text: "[Agent background execution finished or disconnected]".to_string(),
+                    });
+                    self.is_running = false;
+                    self.agent_rx = None;
+                }
+                Err(tokio::sync::mpsc::error::TryRecvError::Empty) => {}
             }
         }
     }
@@ -1763,16 +2104,17 @@ impl ZenApp {
 
         let display_text = if self.input_buffer.is_empty() {
             vec![
-                Span::styled("│ ", Style::default().fg(COLOR_BLUE).add_modifier(Modifier::BOLD)),
+                Span::styled("│ ", Style::default().fg(COLOR_CYAN).add_modifier(Modifier::BOLD)),
+                Span::styled("█ ", Style::default().fg(COLOR_CYAN)),
                 Span::styled(
-                    format!("{} {} tbox Zen", self.agent_mode, self.model_name),
+                    "Ask anything, / for commands, @ for context...",
                     Style::default().fg(COLOR_DIM),
                 ),
             ]
         } else {
             let (before, after) = self.input_buffer.split_at(self.cursor_position);
             vec![
-                Span::styled("│ ", Style::default().fg(COLOR_BLUE).add_modifier(Modifier::BOLD)),
+                Span::styled("│ ", Style::default().fg(COLOR_CYAN).add_modifier(Modifier::BOLD)),
                 Span::styled(before, Style::default().fg(COLOR_WHITE)),
                 Span::styled("█", Style::default().fg(COLOR_CYAN)),
                 Span::styled(after, Style::default().fg(COLOR_WHITE)),
@@ -1782,14 +2124,26 @@ impl ZenApp {
         let input_p = Paragraph::new(Line::from(display_text));
         frame.render_widget(input_p, inner_rect);
 
-        let progress_chars = ["■■■■░░░░", "░■■■■░░░", "░░■■■■░░", "░░░■■■■░", "░░░░■■■■"];
-        let p_bar = progress_chars[(self.progress_ticks / 4) % progress_chars.len()];
-
-        let footer_left = vec![
-            Span::styled(format!("{} ", p_bar), Style::default().fg(COLOR_CYAN)),
-            Span::styled("esc", Style::default().fg(COLOR_WHITE).add_modifier(Modifier::BOLD)),
-            Span::styled(" interrupt", Style::default().fg(COLOR_DIM)),
-        ];
+        let footer_left = if self.is_running {
+            let progress_chars = ["■■■■░░░░", "░■■■■░░░", "░░■■■■░░", "░░░■■■■░", "░░░░■■■■"];
+            let p_bar = progress_chars[(self.progress_ticks / 4) % progress_chars.len()];
+            vec![
+                Span::styled(format!("{} ", p_bar), Style::default().fg(COLOR_CYAN)),
+                Span::styled("esc", Style::default().fg(COLOR_WHITE).add_modifier(Modifier::BOLD)),
+                Span::styled(" interrupt", Style::default().fg(COLOR_DIM)),
+            ]
+        } else {
+            vec![
+                Span::styled("● ", Style::default().fg(COLOR_GREEN)),
+                Span::styled("Ready  ", Style::default().fg(COLOR_WHITE).add_modifier(Modifier::BOLD)),
+                Span::styled("enter", Style::default().fg(COLOR_WHITE).add_modifier(Modifier::BOLD)),
+                Span::styled(" send   ", Style::default().fg(COLOR_DIM)),
+                Span::styled("/setup", Style::default().fg(COLOR_WHITE).add_modifier(Modifier::BOLD)),
+                Span::styled(" config   ", Style::default().fg(COLOR_DIM)),
+                Span::styled("/help", Style::default().fg(COLOR_WHITE).add_modifier(Modifier::BOLD)),
+                Span::styled(" commands", Style::default().fg(COLOR_DIM)),
+            ]
+        };
 
         let footer_right = vec![
             Span::styled("tab", Style::default().fg(COLOR_WHITE).add_modifier(Modifier::BOLD)),
@@ -1800,7 +2154,7 @@ impl ZenApp {
 
         let footer_cols = Layout::default()
             .direction(Direction::Horizontal)
-            .constraints([Constraint::Percentage(50), Constraint::Percentage(50)])
+            .constraints([Constraint::Percentage(55), Constraint::Percentage(45)])
             .split(dock_chunks[2]);
 
         let f_left = Paragraph::new(Line::from(footer_left));
@@ -1972,12 +2326,14 @@ impl ZenApp {
 }
 
 pub async fn run_zen_tui(dir: Option<PathBuf>) -> anyhow::Result<()> {
+    disable_quick_edit();
     enable_raw_mode()?;
     let mut stdout = io::stdout();
     execute!(stdout, EnterAlternateScreen)?;
     let backend = CrosstermBackend::new(stdout);
     let mut terminal = Terminal::new(backend)?;
 
+    let is_first_run = UserConfig::load().is_none();
     let config = UserConfig::load().unwrap_or_default();
     let harness = match dir {
         Some(d) => ACIHarness::new_with_dir(d).ok(),
@@ -1985,6 +2341,11 @@ pub async fn run_zen_tui(dir: Option<PathBuf>) -> anyhow::Result<()> {
     };
 
     let mut app = ZenApp::new(harness, config);
+
+    // Auto-launch Setup Wizard on first run or when credentials are unconfigured
+    if is_first_run || (app.config.api_key.as_deref().unwrap_or("").trim().is_empty() && app.config.provider != "ollama") {
+        app.open_setup_modal();
+    }
 
     let res = run_zen_loop(&mut terminal, &mut app).await;
 
@@ -2005,13 +2366,14 @@ async fn run_zen_loop(
         terminal.draw(|f| app.draw(f))?;
 
         if crossterm::event::poll(tick_rate)? {
-            // Drain pending events to eliminate stutter and repeat lag on Windows
-            while crossterm::event::poll(Duration::from_millis(0))? {
-                if let Event::Key(key) = event::read()? {
-                    if key.kind == KeyEventKind::Press {
+            match event::read()? {
+                Event::Key(key) => {
+                    if key.kind != KeyEventKind::Release {
                         app.handle_key(key);
                     }
                 }
+                Event::Resize(_, _) => {}
+                _ => {}
             }
         }
 

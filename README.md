@@ -72,17 +72,31 @@ Agent (LangChain, smolagents, Custom Harness, SDK)
 
 ## 4. Team Structure & Responsibilities
 
-| Role | Owner | Focus Area |
-|---|---|---|
-| **Product Owner / Lead Author** | Harsh | System Architecture, ACI Design, Paper 1 Lead, Sponsor Alignment |
-| **Scrum Master / Process Lead** | Aryamaan | Sprint Planning, Kanban, Progress Reports |
-| **Data and Infrastructure Lead** | Ammar | Sandbox Virtualization (gVisor/MicroVMs), Taint Engine, Eval Harness |
-| **Attack and Security Lead** | Akshat | Synthetic Adversarial Corpus Generator, Red Team Models, Paper 2 Lead |
-| **Evaluation and Reliability** | Saathvik | SWE-bench/Terminal-Bench Ingestor, Metrics, Reproducibility |
+| Member | Verified First Name | Sprint 1 & Capstone Role | Active Deliverables |
+| :--- | :--- | :--- | :--- |
+| **Harsh Rathi** | Harsh | **Scrum Master** | Sprint planning, Kanban orchestration, PR reviews, blocker escalation, demo presentation. *(Not authoring papers)*. |
+| **Aryamaan** | Aryamaan | **Team Lead & System Architect** | System architecture, tool schemas, state tree branching. **Lead Author on Paper 1: ACI Capability Scaling**. |
+| **Ammar** | Ammar | **Data & Testing Lead (CI/CD)** | GitHub Actions (`ci.yml` + automated releases), SWE-bench/Terminal-Bench ingestion, microVMs. **Co-author on Paper 1**. |
+| **Akshat** | Akshat | **Attack Vectoring & Security Lead** | Synthetic injection corpus (`taintbox attackgen`), Ollama Bunker red-teaming, intent classifier. **Lead Author on Paper 2: Taint as Trust Boundary**. |
+| **Saathvik** | Saathvik | **Dashboard & Backend Lead** | Axum REST daemon, single-binary UI bundling, session DB context persistence. **Co-author on Papers 1 & 2**. |
 
 ---
 
-## 5. Quick Start
+
+---
+
+## 5. Sprint 1 Kanban Board & Task Orchestration
+
+TaintBox features full task orchestration integrated across three levels:
+
+* **Live Embedded App Kanban**: Open `tbox.exe app` or visit `http://localhost:8000/?view=kanban` to view the 5-column multi-agent board (`Backlog` &rarr; `Planning` &rarr; `Sandbox Exec` &rarr; `Taint Audit` &rarr; `Verified`).
+* **Repository Kanban Document**: See [`KANBAN.md`](./KANBAN.md) for the complete task breakdown and sprint deliverables.
+* **Sprint Backlog & Tasks**: See [`TODO.md`](./TODO.md) for granular member checklists and research paper responsibilities.
+* **GitHub Projects & Asana MCP**:
+  * **GitHub Projects Board**: Track live cards via GitHub Projects v2 at `https://github.com/xyzmr114/ds440-nittanystreet/projects`.
+  * **Asana MCP**: Configure `@modelcontextprotocol/server-asana` in your MCP client to auto-synchronize agent tool executions and taint alerts with your Asana workspace.
+
+## 6. Quick Start
 
 ### Prerequisites
 * **Rust** (MSRV: 1.78+)
@@ -101,7 +115,7 @@ cargo build
 ```bash
 cargo test
 ```
-*(All 48 unit & integration tests across 15 suites compile and pass with 0 warnings).*
+*(All 60 unit & integration tests across 17 suites compile and pass with 0 warnings).*
 
 ### Running the Subsystems
 

@@ -165,3 +165,56 @@ fn test_zen_app_setup_modal_flow() {
     assert!(has_saved_msg);
 }
 
+#[test]
+fn test_zen_app_keyboard_shortcuts_and_help() {
+    use crossterm::event::KeyEventKind;
+
+    let mut app = ZenApp::default();
+
+    // Test typing with KeyEventKind::Press and KeyEventKind::Repeat
+    let mut press_h = KeyEvent::new(KeyCode::Char('h'), KeyModifiers::NONE);
+    press_h.kind = KeyEventKind::Press;
+    app.handle_key(press_h);
+
+    let mut repeat_e = KeyEvent::new(KeyCode::Char('e'), KeyModifiers::NONE);
+    repeat_e.kind = KeyEventKind::Repeat;
+    app.handle_key(repeat_e);
+
+    let mut repeat_l = KeyEvent::new(KeyCode::Char('l'), KeyModifiers::NONE);
+    repeat_l.kind = KeyEventKind::Repeat;
+    app.handle_key(repeat_l);
+
+    let mut repeat_p = KeyEvent::new(KeyCode::Char('p'), KeyModifiers::NONE);
+    repeat_p.kind = KeyEventKind::Repeat;
+    app.handle_key(repeat_p);
+
+    assert_eq!(app.input_buffer, "help");
+
+    // Test Ctrl+U (clear line)
+    let ctrl_u = KeyEvent::new(KeyCode::Char('u'), KeyModifiers::CONTROL);
+    app.handle_key(ctrl_u);
+    assert_eq!(app.input_buffer, "");
+
+    // Test typing and word deletion with Ctrl+W
+    for c in "foo bar".chars() {
+        app.handle_key(KeyEvent::new(KeyCode::Char(c), KeyModifiers::NONE));
+    }
+    assert_eq!(app.input_buffer, "foo bar");
+
+    let ctrl_w = KeyEvent::new(KeyCode::Char('w'), KeyModifiers::CONTROL);
+    app.handle_key(ctrl_w);
+    assert_eq!(app.input_buffer, "foo ");
+
+    // Test /help command execution
+    app.handle_key(ctrl_u);
+    app.execute_command_str("/help");
+    let has_help = app.feed.iter().any(|item| {
+        if let FeedItem::AgentMessage { text } = item {
+            text.contains("Command Reference")
+        } else {
+            false
+        }
+    });
+    assert!(has_help);
+}
+
