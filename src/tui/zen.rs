@@ -1,6 +1,7 @@
 use std::io::{self, Stdout};
 use std::path::PathBuf;
 use std::time::Duration;
+use tokio::sync::mpsc::UnboundedReceiver;
 
 use crossterm::{
     event::{self, Event, KeyCode, KeyEvent, KeyEventKind, KeyModifiers},
@@ -38,6 +39,31 @@ pub const COLOR_DIFF_DEL_BG: Color = Color::Rgb(55, 20, 25);
 pub const COLOR_DIFF_DEL_FG: Color = Color::Rgb(248, 113, 113);
 pub const COLOR_DIFF_ADD_BG: Color = Color::Rgb(15, 45, 30);
 pub const COLOR_DIFF_ADD_FG: Color = Color::Rgb(52, 211, 153);
+
+pub const SETUP_PROVIDERS: &[(&str, &str, &str)] = &[
+    ("ollama", "http://localhost:11434/v1", "qwen2.5-coder"),
+    ("openai", "https://api.openai.com/v1", "gpt-4o"),
+    ("anthropic", "https://api.anthropic.com/v1", "claude-3-5-sonnet-20241022"),
+    ("openrouter", "https://openrouter.ai/api/v1", "anthropic/claude-3.5-sonnet"),
+    ("deepseek", "https://api.deepseek.com/v1", "deepseek-chat"),
+    ("custom", "http://localhost:8080/v1", "custom-model"),
+];
+
+pub const SETUP_POLICIES: &[(&str, &str)] = &[
+    ("Standard", "Blocks unauthorized writes & unallowlisted egress on untrusted data"),
+    ("Strict", "Zero unconfined execution; blocks all untrusted write/exec turns"),
+    ("AuditOnly", "Log all actions and provenance without active blocking"),
+    ("Paranoid", "Full lock-down; isolation runtime required for all calls"),
+];
+
+pub enum AgentTurnResult {
+    ApiSuccess(serde_json::Value),
+    OfflineFallback {
+        prompt: String,
+        error: String,
+    },
+}
+
 
 fn format_number_commas(n: usize) -> String {
     let s = n.to_string();
@@ -129,12 +155,23 @@ pub struct ZenApp {
     pub palette_selected: usize,
     pub palette_commands: Vec<PaletteCommand>,
 
+    // Setup Wizard Modal
+    pub setup_open: bool,
+    pub setup_step: usize, // 0: Provider, 1: Endpoint URL, 2: API Key, 3: Model, 4: Policy Profile
+    pub setup_provider_idx: usize,
+    pub setup_model_idx: usize,
+    pub setup_policy_idx: usize,
+    pub setup_input_buffer: String,
+    pub setup_input_cursor: usize,
+    pub setup_models_cache: Vec<crate::config::models_dev::ModelSpec>,
+
     pub history: Vec<AgentMessage>,
     pub should_quit: bool,
     pub harness: Option<ACIHarness>,
     pub baseline_snapshot_id: Option<String>,
     pub config: UserConfig,
     pub http_client: reqwest::Client,
+    pub agent_rx: Option<UnboundedReceiver<AgentTurnResult>>,
 }
 
 impl Default for ZenApp {
@@ -250,12 +287,21 @@ impl ZenApp {
                     desc: "Safely shutdown TaintBox".to_string(),
                 },
             ],
+            setup_open: false,
+            setup_step: 0,
+            setup_provider_idx: 0,
+            setup_model_idx: 0,
+            setup_policy_idx: 0,
+            setup_input_buffer: String::new(),
+            setup_input_cursor: 0,
+            setup_models_cache: Vec::new(),
             history: Vec::new(),
             should_quit: false,
             harness,
             baseline_snapshot_id: baseline_snap,
             config,
             http_client: reqwest::Client::new(),
+            agent_rx: None,
         };
 
         app.initialize_welcome_banner();
@@ -282,6 +328,11 @@ impl ZenApp {
 
     pub fn handle_key(&mut self, key: KeyEvent) {
         if key.kind != KeyEventKind::Press {
+            return;
+        }
+
+        if self.setup_open {
+            self.handle_setup_key(key);
             return;
         }
 
@@ -333,6 +384,7 @@ impl ZenApp {
             KeyCode::Esc => {
                 if self.is_running {
                     self.is_running = false;
+                    self.agent_rx = None;
                     self.feed.push(FeedItem::AgentMessage {
                         text: "[Task execution interrupted by user]".to_string(),
                     });
@@ -534,12 +586,7 @@ impl ZenApp {
             }
             self.feed.push(FeedItem::AgentMessage { text: diff_summary });
         } else if cmd == "/setup" {
-            self.feed.push(FeedItem::AgentMessage {
-                text: format!(
-                    "Active Provider: {} | Endpoint: {} | Model: {}. To edit, run 'tbox setup'.",
-                    self.config.provider, self.config.api_url, self.model_name
-                ),
-            });
+            self.open_setup_modal();
         } else if cmd == "/clear" {
             self.feed.clear();
             self.initialize_welcome_banner();
@@ -619,6 +666,30 @@ impl ZenApp {
         self.task_title = format!("Testing Defense: {}", attack_id);
     }
 
+    pub fn build_turn_messages(&self, prompt: &str) -> Vec<serde_json::Value> {
+        let system_msg = "You are an autonomous AI software engineer in an isolated TaintBox sandbox runtime.\n\
+            Available tools: read, write, edit_block, view_lines, search_files, grep, exec, fetch, rewind, observe.\n\
+            Format tool calls using <tool_call>{\"name\": \"tool_name\", \"arguments\": {...}}</tool_call>.\n\
+            Respond concisely and call tools to complete the task.";
+
+        let mut turn_messages: Vec<serde_json::Value> = vec![
+            serde_json::json!({ "role": "system", "content": system_msg }),
+        ];
+
+        for m in &self.history {
+            let role = match m.role {
+                AgentRole::System => "system",
+                AgentRole::User => "user",
+                AgentRole::Assistant => "assistant",
+                AgentRole::Tool => "user",
+            };
+            turn_messages.push(serde_json::json!({ "role": role, "content": m.content }));
+        }
+
+        turn_messages.push(serde_json::json!({ "role": "user", "content": prompt }));
+        turn_messages
+    }
+
     pub fn submit_prompt(&mut self, prompt: &str) {
         if prompt.starts_with('/') {
             self.execute_command_str(prompt);
@@ -638,7 +709,109 @@ impl ZenApp {
             return;
         }
 
-        self.execute_real_agent_turn(prompt);
+        // If inside active Tokio runtime, dispatch asynchronously to prevent TUI blocking
+        if let Ok(handle) = tokio::runtime::Handle::try_current() {
+            self.is_running = true;
+            let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
+            self.agent_rx = Some(rx);
+
+            let client = self.http_client.clone();
+            let url = format!("{}/chat/completions", self.config.api_url);
+            let key = self.config.api_key.clone();
+            let model = self.model_name.clone();
+            let prompt_owned = prompt.to_string();
+            let turn_messages = self.build_turn_messages(prompt);
+
+            let payload = serde_json::json!({
+                "model": model,
+                "messages": turn_messages,
+                "temperature": 0.0,
+                "max_tokens": 2048,
+            });
+
+            handle.spawn(async move {
+                let mut req = client
+                    .post(&url)
+                    .json(&payload)
+                    .timeout(Duration::from_secs(12));
+
+                if let Some(k) = key {
+                    if !k.is_empty() {
+                        req = req.header("Authorization", format!("Bearer {}", k));
+                    }
+                }
+
+                match req.send().await {
+                    Ok(resp) => {
+                        match resp.json::<serde_json::Value>().await {
+                            Ok(val) => {
+                                let _ = tx.send(AgentTurnResult::ApiSuccess(val));
+                            }
+                            Err(e) => {
+                                let _ = tx.send(AgentTurnResult::OfflineFallback {
+                                    prompt: prompt_owned,
+                                    error: e.to_string(),
+                                });
+                            }
+                        }
+                    }
+                    Err(e) => {
+                        let _ = tx.send(AgentTurnResult::OfflineFallback {
+                            prompt: prompt_owned,
+                            error: e.to_string(),
+                        });
+                    }
+                }
+            });
+        } else {
+            // Synchronous fallback for test harnesses without Tokio runtime context
+            self.execute_real_agent_turn(prompt);
+        }
+    }
+
+    pub fn process_agent_result(&mut self, res: AgentTurnResult) {
+        match res {
+            AgentTurnResult::ApiSuccess(val) => {
+                if let Some(usage) = val.get("usage") {
+                    let prompt_tokens = usage.get("prompt_tokens").and_then(|t| t.as_u64()).unwrap_or(0) as usize;
+                    let comp_tokens = usage.get("completion_tokens").and_then(|t| t.as_u64()).unwrap_or(0) as usize;
+                    let total = usage.get("total_tokens").and_then(|t| t.as_u64()).unwrap_or((prompt_tokens + comp_tokens) as u64) as usize;
+                    self.tokens += total;
+                    self.context_pct = (self.tokens * 100) / 128000;
+                    self.spent_usd += (prompt_tokens as f64 * 0.000003) + (comp_tokens as f64 * 0.000015);
+                } else {
+                    let est_tokens = 120;
+                    self.tokens += est_tokens;
+                    self.context_pct = (self.tokens * 100) / 128000;
+                    self.spent_usd += est_tokens as f64 * 0.000005;
+                }
+
+                if let Some(content) = val["choices"][0]["message"]["content"].as_str() {
+                    if let Some(tool_call) = parse_tool_call(content) {
+                        self.execute_and_display_tool_call(&tool_call);
+                    } else {
+                        self.feed.push(FeedItem::AgentMessage {
+                            text: content.to_string(),
+                        });
+                        self.history.push(AgentMessage {
+                            role: AgentRole::Assistant,
+                            content: content.to_string(),
+                            tool_name: None,
+                        });
+                    }
+                } else if let Some(err) = val.get("error").and_then(|e| e.get("message")).and_then(|m| m.as_str()) {
+                    self.feed.push(FeedItem::AgentMessage {
+                        text: format!("API Error: {}", err),
+                    });
+                }
+            }
+            AgentTurnResult::OfflineFallback { prompt, error } => {
+                self.feed.push(FeedItem::AgentMessage {
+                    text: format!("Endpoint at {} offline or unreachable ({}). Running direct sandbox execution turn.", self.config.api_url, error),
+                });
+                self.run_direct_sandbox_step(&prompt);
+            }
+        }
     }
 
     pub fn execute_real_agent_turn(&mut self, prompt: &str) {
@@ -945,6 +1118,343 @@ impl ZenApp {
         }
     }
 
+    
+    pub fn open_setup_modal(&mut self) {
+        self.setup_open = true;
+        self.setup_step = 0;
+        self.setup_provider_idx = SETUP_PROVIDERS
+            .iter()
+            .position(|(p, _, _)| *p == self.config.provider)
+            .unwrap_or(0);
+        self.setup_input_buffer.clear();
+        self.setup_input_cursor = 0;
+        self.setup_policy_idx = match self.config.policy_profile.as_str() {
+            "Strict" => 1,
+            "AuditOnly" => 2,
+            "Paranoid" => 3,
+            _ => 0,
+        };
+        self.setup_models_cache = crate::config::models_dev::ModelCatalog::get_models_for_provider(SETUP_PROVIDERS[self.setup_provider_idx].0);
+        self.setup_model_idx = 0;
+    }
+
+    pub fn handle_setup_key(&mut self, key: KeyEvent) {
+        match key.code {
+            KeyCode::Esc => {
+                self.setup_open = false;
+            }
+            KeyCode::Up => {
+                match self.setup_step {
+                    0 => {
+                        if self.setup_provider_idx > 0 {
+                            self.setup_provider_idx -= 1;
+                            self.setup_models_cache = crate::config::models_dev::ModelCatalog::get_models_for_provider(SETUP_PROVIDERS[self.setup_provider_idx].0);
+                            self.setup_model_idx = 0;
+                        }
+                    }
+                    3 => {
+                        if self.setup_model_idx > 0 {
+                            self.setup_model_idx -= 1;
+                        }
+                    }
+                    4 => {
+                        if self.setup_policy_idx > 0 {
+                            self.setup_policy_idx -= 1;
+                        }
+                    }
+                    _ => {}
+                }
+            }
+            KeyCode::Down => {
+                match self.setup_step {
+                    0 => {
+                        if self.setup_provider_idx + 1 < SETUP_PROVIDERS.len() {
+                            self.setup_provider_idx += 1;
+                            self.setup_models_cache = crate::config::models_dev::ModelCatalog::get_models_for_provider(SETUP_PROVIDERS[self.setup_provider_idx].0);
+                            self.setup_model_idx = 0;
+                        }
+                    }
+                    3 => {
+                        if !self.setup_models_cache.is_empty() && self.setup_model_idx + 1 < self.setup_models_cache.len() {
+                            self.setup_model_idx += 1;
+                        }
+                    }
+                    4 => {
+                        if self.setup_policy_idx + 1 < SETUP_POLICIES.len() {
+                            self.setup_policy_idx += 1;
+                        }
+                    }
+                    _ => {}
+                }
+            }
+            KeyCode::Char(c) if self.setup_step == 1 || self.setup_step == 2 => {
+                self.setup_input_buffer.insert(self.setup_input_cursor, c);
+                self.setup_input_cursor += 1;
+            }
+            KeyCode::Backspace if self.setup_step == 1 || self.setup_step == 2 => {
+                if self.setup_input_cursor > 0 && !self.setup_input_buffer.is_empty() {
+                    self.setup_input_buffer.remove(self.setup_input_cursor - 1);
+                    self.setup_input_cursor -= 1;
+                }
+            }
+            KeyCode::Left if self.setup_step == 1 || self.setup_step == 2 => {
+                if self.setup_input_cursor > 0 {
+                    self.setup_input_cursor -= 1;
+                }
+            }
+            KeyCode::Right if self.setup_step == 1 || self.setup_step == 2 => {
+                if self.setup_input_cursor < self.setup_input_buffer.len() {
+                    self.setup_input_cursor += 1;
+                }
+            }
+            KeyCode::Enter => {
+                self.advance_setup_step();
+            }
+            _ => {}
+        }
+    }
+
+    pub fn advance_setup_step(&mut self) {
+        match self.setup_step {
+            0 => {
+                let (prov, def_url, _) = SETUP_PROVIDERS[self.setup_provider_idx];
+                self.config.provider = prov.to_string();
+                self.setup_input_buffer = if self.config.api_url.is_empty() || (self.config.api_url.contains("localhost") && prov != "ollama" && prov != "custom") {
+                    def_url.to_string()
+                } else {
+                    self.config.api_url.clone()
+                };
+                self.setup_input_cursor = self.setup_input_buffer.len();
+                self.setup_step = 1;
+            }
+            1 => {
+                if !self.setup_input_buffer.trim().is_empty() {
+                    self.config.api_url = self.setup_input_buffer.trim().to_string();
+                }
+                self.setup_input_buffer = self.config.api_key.clone().unwrap_or_default();
+                self.setup_input_cursor = self.setup_input_buffer.len();
+                self.setup_step = 2;
+            }
+            2 => {
+                let key = self.setup_input_buffer.trim();
+                self.config.api_key = if key.is_empty() { None } else { Some(key.to_string()) };
+                self.setup_models_cache = crate::config::models_dev::ModelCatalog::get_models_for_provider(&self.config.provider);
+                self.setup_model_idx = 0;
+                self.setup_step = 3;
+            }
+            3 => {
+                if let Some(m) = self.setup_models_cache.get(self.setup_model_idx) {
+                    self.model_name = m.id.clone();
+                    self.config.model = m.id.clone();
+                } else {
+                    let (_, _, def_model) = SETUP_PROVIDERS[self.setup_provider_idx];
+                    self.model_name = def_model.to_string();
+                    self.config.model = def_model.to_string();
+                }
+                self.setup_step = 4;
+            }
+            4 => {
+                let (pol_name, _) = SETUP_POLICIES[self.setup_policy_idx];
+                self.config.policy_profile = pol_name.to_string();
+                let _ = self.config.save();
+                self.setup_open = false;
+                self.feed.push(FeedItem::AgentMessage {
+                    text: format!(
+                        "⚡ Configuration saved! Provider: {} | Endpoint: {} | Model: {} | Policy: {}",
+                        self.config.provider, self.config.api_url, self.model_name, self.config.policy_profile
+                    ),
+                });
+            }
+            _ => {
+                self.setup_open = false;
+            }
+        }
+    }
+
+    fn draw_setup_modal(&self, frame: &mut Frame, area: Rect) {
+        let modal_w = 74.min(area.width.saturating_sub(4));
+        let modal_h = 22.min(area.height.saturating_sub(4));
+        let modal_x = (area.width.saturating_sub(modal_w)) / 2;
+        let modal_y = (area.height.saturating_sub(modal_h)) / 2;
+        let modal_rect = Rect::new(modal_x, modal_y, modal_w, modal_h);
+
+        frame.render_widget(Clear, modal_rect);
+
+        let modal_block = Block::default()
+            .title(Span::styled(" TaintBox Setup Wizard (/setup) ", Style::default().fg(COLOR_CYAN).add_modifier(Modifier::BOLD)))
+            .borders(Borders::ALL)
+            .border_style(Style::default().fg(COLOR_CYAN))
+            .style(Style::default().bg(COLOR_CARD_BG));
+        frame.render_widget(modal_block, modal_rect);
+
+        let inner = Rect {
+            x: modal_rect.x + 2,
+            y: modal_rect.y + 1,
+            width: modal_rect.width.saturating_sub(4),
+            height: modal_rect.height.saturating_sub(2),
+        };
+
+        let chunks = Layout::default()
+            .direction(Direction::Vertical)
+            .constraints([
+                Constraint::Length(2), // Step breadcrumb
+                Constraint::Length(1), // Divider
+                Constraint::Min(8),    // Body
+                Constraint::Length(1), // Divider
+                Constraint::Length(2), // Help footer
+            ])
+            .split(inner);
+
+        // Step breadcrumbs
+        let steps = [
+            "1. Provider",
+            "2. Endpoint",
+            "3. API Key",
+            "4. Model",
+            "5. Policy",
+        ];
+        let mut step_spans = Vec::new();
+        for (i, name) in steps.iter().enumerate() {
+            if i > 0 {
+                step_spans.push(Span::styled(" > ", Style::default().fg(COLOR_BORDER)));
+            }
+            if i == self.setup_step {
+                step_spans.push(Span::styled(
+                    format!("[{}]", name),
+                    Style::default().fg(COLOR_CYAN).add_modifier(Modifier::BOLD),
+                ));
+            } else if i < self.setup_step {
+                step_spans.push(Span::styled(
+                    format!(" {}", name),
+                    Style::default().fg(COLOR_GREEN),
+                ));
+            } else {
+                step_spans.push(Span::styled(
+                    format!(" {}", name),
+                    Style::default().fg(COLOR_DIM),
+                ));
+            }
+        }
+        frame.render_widget(Paragraph::new(Line::from(step_spans)), chunks[0]);
+
+        let divider = Paragraph::new(Line::from(Span::styled("─".repeat(chunks[1].width as usize), Style::default().fg(COLOR_BORDER))));
+        frame.render_widget(divider.clone(), chunks[1]);
+        frame.render_widget(divider, chunks[3]);
+
+        // Body per step
+        let mut body_lines = Vec::new();
+        let mut footer_help = "Press [Enter] to confirm, [Esc] to cancel";
+
+        match self.setup_step {
+            0 => {
+                body_lines.push(Line::from(Span::styled("Select LLM Inference Provider:", Style::default().fg(COLOR_WHITE).add_modifier(Modifier::BOLD))));
+                body_lines.push(Line::from(""));
+                for (i, (prov, url, def_mod)) in SETUP_PROVIDERS.iter().enumerate() {
+                    let is_sel = i == self.setup_provider_idx;
+                    let (prefix, style) = if is_sel {
+                        ("▶ ", Style::default().fg(COLOR_WHITE).bg(COLOR_BLUE).add_modifier(Modifier::BOLD))
+                    } else {
+                        ("  ", Style::default().fg(COLOR_MUTED))
+                    };
+                    body_lines.push(Line::from(vec![
+                        Span::styled(prefix, style),
+                        Span::styled(format!("{:<14} ", prov), style),
+                        Span::styled(format!("(default: {}, {})", url, def_mod), Style::default().fg(COLOR_DIM)),
+                    ]));
+                }
+                footer_help = "Use [↑/↓] to select provider, [Enter] to continue, [Esc] to cancel";
+            }
+            1 => {
+                body_lines.push(Line::from(Span::styled("Configure API Endpoint URL:", Style::default().fg(COLOR_WHITE).add_modifier(Modifier::BOLD))));
+                body_lines.push(Line::from(""));
+                body_lines.push(Line::from(vec![
+                    Span::styled("URL: ", Style::default().fg(COLOR_CYAN).add_modifier(Modifier::BOLD)),
+                    Span::styled(&self.setup_input_buffer, Style::default().fg(COLOR_WHITE)),
+                    Span::styled("█", Style::default().fg(COLOR_CYAN)),
+                ]));
+                body_lines.push(Line::from(""));
+                body_lines.push(Line::from(Span::styled("Examples:", Style::default().fg(COLOR_DIM))));
+                body_lines.push(Line::from(Span::styled("  • http://localhost:11434/v1 (Ollama)", Style::default().fg(COLOR_DIM))));
+                body_lines.push(Line::from(Span::styled("  • https://api.openai.com/v1 (OpenAI)", Style::default().fg(COLOR_DIM))));
+                body_lines.push(Line::from(Span::styled("  • https://openrouter.ai/api/v1 (OpenRouter)", Style::default().fg(COLOR_DIM))));
+                footer_help = "Type to edit URL, [Enter] to confirm, [Esc] to cancel";
+            }
+            2 => {
+                let (prov, _, _) = SETUP_PROVIDERS[self.setup_provider_idx];
+                body_lines.push(Line::from(Span::styled(
+                    format!("Enter API Key for '{}':", prov),
+                    Style::default().fg(COLOR_WHITE).add_modifier(Modifier::BOLD),
+                )));
+                body_lines.push(Line::from(""));
+                let masked = if self.setup_input_buffer.is_empty() {
+                    "(none / local endpoint)".to_string()
+                } else if self.setup_input_buffer.len() <= 6 {
+                    "*".repeat(self.setup_input_buffer.len())
+                } else {
+                    format!("{}...{}", &self.setup_input_buffer[..3], &self.setup_input_buffer[self.setup_input_buffer.len() - 3..])
+                };
+                body_lines.push(Line::from(vec![
+                    Span::styled("Key: ", Style::default().fg(COLOR_CYAN).add_modifier(Modifier::BOLD)),
+                    Span::styled(masked, Style::default().fg(COLOR_WHITE)),
+                    Span::styled("█", Style::default().fg(COLOR_CYAN)),
+                ]));
+                body_lines.push(Line::from(""));
+                body_lines.push(Line::from(Span::styled("Optional for Ollama/local bunker. Leave empty and press [Enter] to skip.", Style::default().fg(COLOR_DIM))));
+                footer_help = "Paste or type API key, [Enter] to continue, [Esc] to cancel";
+            }
+            3 => {
+                let (prov, _, _) = SETUP_PROVIDERS[self.setup_provider_idx];
+                body_lines.push(Line::from(Span::styled(
+                    format!("Select Model from models.dev for '{}':", prov),
+                    Style::default().fg(COLOR_WHITE).add_modifier(Modifier::BOLD),
+                )));
+                body_lines.push(Line::from(""));
+                if self.setup_models_cache.is_empty() {
+                    body_lines.push(Line::from(Span::styled("  • (Using default provider model)", Style::default().fg(COLOR_MUTED))));
+                } else {
+                    for (i, m) in self.setup_models_cache.iter().take(6).enumerate() {
+                        let is_sel = i == self.setup_model_idx;
+                        let (prefix, style) = if is_sel {
+                            ("▶ ", Style::default().fg(COLOR_WHITE).bg(COLOR_BLUE).add_modifier(Modifier::BOLD))
+                        } else {
+                            ("  ", Style::default().fg(COLOR_MUTED))
+                        };
+                        body_lines.push(Line::from(vec![
+                            Span::styled(prefix, style),
+                            Span::styled(format!("{:<30} ", m.name), style),
+                            Span::styled(format!(" [ctx: {}k]", m.context_window / 1000), Style::default().fg(COLOR_DIM)),
+                        ]));
+                    }
+                }
+                footer_help = "Use [↑/↓] to pick model, [Enter] to confirm, [Esc] to cancel";
+            }
+            4 => {
+                body_lines.push(Line::from(Span::styled("Select Boundary Policy Enforcement Profile:", Style::default().fg(COLOR_WHITE).add_modifier(Modifier::BOLD))));
+                body_lines.push(Line::from(""));
+                for (i, (pol, desc)) in SETUP_POLICIES.iter().enumerate() {
+                    let is_sel = i == self.setup_policy_idx;
+                    let (prefix, style) = if is_sel {
+                        ("▶ ", Style::default().fg(COLOR_WHITE).bg(COLOR_BLUE).add_modifier(Modifier::BOLD))
+                    } else {
+                        ("  ", Style::default().fg(COLOR_MUTED))
+                    };
+                    body_lines.push(Line::from(vec![
+                        Span::styled(prefix, style),
+                        Span::styled(format!("{:<12} ", pol), style),
+                        Span::styled(format!("- {}", desc), Style::default().fg(COLOR_DIM)),
+                    ]));
+                }
+                footer_help = "Use [↑/↓] to pick policy, [Enter] to save & apply configuration";
+            }
+            _ => {}
+        }
+
+        frame.render_widget(Paragraph::new(body_lines), chunks[2]);
+
+        let help_p = Paragraph::new(Line::from(Span::styled(footer_help, Style::default().fg(COLOR_AMBER))));
+        frame.render_widget(help_p, chunks[4]);
+    }
+
     pub fn compute_dynamic_diff(path: &str, old_text: &str, new_text: &str) -> FeedItem {
         let old_lines: Vec<&str> = old_text.lines().collect();
         let new_lines: Vec<&str> = new_text.lines().collect();
@@ -1015,6 +1525,13 @@ impl ZenApp {
 
     pub fn tick(&mut self) {
         self.progress_ticks = (self.progress_ticks + 1) % 100;
+        if let Some(rx) = &mut self.agent_rx {
+            if let Ok(res) = rx.try_recv() {
+                self.process_agent_result(res);
+                self.is_running = false;
+                self.agent_rx = None;
+            }
+        }
     }
 
     pub fn draw(&self, frame: &mut Frame) {
@@ -1034,7 +1551,9 @@ impl ZenApp {
         self.draw_left_panel(frame, main_cols[0]);
         self.draw_right_sidebar(frame, main_cols[1]);
 
-        if self.palette_open {
+        if self.setup_open {
+            self.draw_setup_modal(frame, area);
+        } else if self.palette_open {
             self.draw_command_palette(frame, area);
         }
     }
@@ -1486,8 +2005,13 @@ async fn run_zen_loop(
         terminal.draw(|f| app.draw(f))?;
 
         if crossterm::event::poll(tick_rate)? {
-            if let Event::Key(key) = event::read()? {
-                app.handle_key(key);
+            // Drain pending events to eliminate stutter and repeat lag on Windows
+            while crossterm::event::poll(Duration::from_millis(0))? {
+                if let Event::Key(key) = event::read()? {
+                    if key.kind == KeyEventKind::Press {
+                        app.handle_key(key);
+                    }
+                }
             }
         }
 

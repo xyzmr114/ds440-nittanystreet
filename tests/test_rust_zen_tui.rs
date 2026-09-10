@@ -112,3 +112,56 @@ fn test_zen_app_rendering_all_components_without_panic() {
     app.cursor_position = 10;
     terminal.draw(|f| app.draw(f)).unwrap();
 }
+
+#[test]
+fn test_zen_app_setup_modal_flow() {
+    let backend = TestBackend::new(140, 45);
+    let mut terminal = Terminal::new(backend).unwrap();
+
+    let mut app = ZenApp::default();
+    assert!(!app.setup_open);
+
+    // Trigger /setup command
+    app.execute_command_str("/setup");
+    assert!(app.setup_open);
+    assert_eq!(app.setup_step, 0);
+
+    // Verify rendering setup step 0 (Provider selection)
+    terminal.draw(|f| app.draw(f)).unwrap();
+
+    // Advance to Step 1 (Endpoint URL)
+    let enter_event = KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE);
+    app.handle_key(enter_event);
+    assert_eq!(app.setup_step, 1);
+    terminal.draw(|f| app.draw(f)).unwrap();
+
+    // Advance to Step 2 (API Key)
+    app.handle_key(enter_event);
+    assert_eq!(app.setup_step, 2);
+    terminal.draw(|f| app.draw(f)).unwrap();
+
+    // Advance to Step 3 (Model)
+    app.handle_key(enter_event);
+    assert_eq!(app.setup_step, 3);
+    terminal.draw(|f| app.draw(f)).unwrap();
+
+    // Advance to Step 4 (Policy)
+    app.handle_key(enter_event);
+    assert_eq!(app.setup_step, 4);
+    terminal.draw(|f| app.draw(f)).unwrap();
+
+    // Complete setup
+    app.handle_key(enter_event);
+    assert!(!app.setup_open);
+
+    // Check confirmation message was appended to feed
+    let has_saved_msg = app.feed.iter().any(|item| {
+        if let FeedItem::AgentMessage { text } = item {
+            text.contains("Configuration saved")
+        } else {
+            false
+        }
+    });
+    assert!(has_saved_msg);
+}
+
