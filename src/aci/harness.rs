@@ -15,15 +15,20 @@ pub const DELETE_PROGRAMS: &[&str] = &["rm", "del", "unlink", "shred"];
 pub struct ACIHarness {
     pub runtime: Box<dyn SandboxRuntime>,
     pub taint_engine: TaintEngine,
-    snapshots: HashMap<String, SnapshotMetadata>,
+    pub snapshots: HashMap<String, SnapshotMetadata>,
     step_counter: usize,
     audit_events: Vec<AuditEvent>,
 }
 
 impl ACIHarness {
     pub fn new_with_temp_dir() -> anyhow::Result<Self> {
-        let temp_dir = tempfile::tempdir()?;
-        let runtime = LocalIsolatedRuntime::new(temp_dir.path())?;
+        #[allow(deprecated)]
+        let temp_dir = tempfile::tempdir()?.into_path();
+        let runtime = LocalIsolatedRuntime::new(&temp_dir)?;
+        
+        // Marker file for restore_snapshot safety
+        std::fs::write(temp_dir.join(".taintbox_sandbox"), "test sandbox")?;
+
         Ok(Self {
             runtime: Box::new(runtime),
             taint_engine: TaintEngine::new(),
@@ -446,13 +451,35 @@ impl ACIHarness {
     pub fn exec(&mut self, program: &str, args: &[String]) -> ToolResult {
         let call_id = Uuid::new_v4().to_string();
 
-        let action = if NETWORK_PROGRAMS.iter().any(|&p| p.eq_ignore_ascii_case(program)) {
+        let mut target_url = "https://unknown-egress".to_string();
+        let mut action = if NETWORK_PROGRAMS.iter().any(|&p| p.eq_ignore_ascii_case(program)) {
             "network_egress"
         } else if DELETE_PROGRAMS.iter().any(|&p| p.eq_ignore_ascii_case(program)) {
             "file_delete"
+        } else if ["bash", "sh", "dash", "zsh", "cmd", "powershell", "pwsh"].iter().any(|&p| p.eq_ignore_ascii_case(program)) {
+            "exec_privileged"
         } else {
             "exec"
         };
+
+        let is_shell_wrapper = ["bash", "sh", "dash", "zsh", "cmd", "powershell", "pwsh"].iter().any(|&p| p.eq_ignore_ascii_case(program));
+
+        if action == "exec_privileged" {
+            for i in 0..args.len() {
+                if args[i] == "-c" || args[i] == "-Command" {
+                    if let Some(cmd) = args.get(i + 1) {
+                        if NETWORK_PROGRAMS.iter().any(|&p| cmd.contains(p)) {
+                            action = "network_egress";
+                            if let Some(url) = cmd.split_whitespace().find(|a| a.starts_with("http://") || a.starts_with("https://") || a.contains("://")) {
+                                target_url = url.to_string();
+                            }
+                        } else if DELETE_PROGRAMS.iter().any(|&p| cmd.contains(p)) {
+                            action = "file_delete";
+                        }
+                    }
+                }
+            }
+        }
 
         // Scan args for referenced files
         let mut referenced_files = Vec::new();
@@ -462,38 +489,43 @@ impl ACIHarness {
                 referenced_files.push(clean.to_string());
             }
         }
-
-        if action == "network_egress" {
-            let target_url = args
-                .iter()
-                .find(|a| a.starts_with("http://") || a.starts_with("https://") || a.contains("://"))
-                .map(|s| s.as_str())
-                .unwrap_or("https://unknown-egress");
-            let net_decision =
-                self.taint_engine.evaluate_network_egress(target_url, &referenced_files);
-            if !net_decision.allowed {
-                self.log_event(
-                    "POLICY_BLOCK",
-                    action,
-                    serde_json::json!({
-                        "program": program,
-                        "args": args,
-                        "reason": net_decision.reason
-                    }),
-                );
-                return ToolResult {
-                    call_id,
-                    tool_name: "exec".to_string(),
-                    status: "BLOCKED_BY_POLICY".to_string(),
-                    output: serde_json::Value::Null,
-                    error: Some(net_decision.reason.clone()),
-                    provenance: None,
-                    policy_decision: Some(net_decision),
-                };
+        // Shell commands embed filenames in -c content — scan those too
+        if is_shell_wrapper {
+            for arg in args {
+                if arg == "-c" || arg == "-Command" {
+                    continue;
+                }
+                for word in arg.split_whitespace() {
+                    let clean = word.trim_start_matches('@').trim();
+                    if self.runtime.file_exists(clean) && !referenced_files.contains(&clean.to_string()) {
+                        referenced_files.push(clean.to_string());
+                    }
+                }
             }
         }
 
-        let decision = self.taint_engine.evaluate_policy(action, &referenced_files);
+        if action == "network_egress" && target_url == "https://unknown-egress" {
+            if let Some(url) = args.iter().find(|a| a.starts_with("http://") || a.starts_with("https://") || a.contains("://")) {
+                target_url = url.to_string();
+            }
+        }
+
+        let decision = if action == "network_egress" {
+            let net_decision = self.taint_engine.evaluate_network_egress(&target_url, &referenced_files);
+            if !net_decision.allowed {
+                net_decision
+            } else {
+                // Even if network destination is allowlisted, still enforce general taint policy
+                let taint_decision = self.taint_engine.evaluate_policy(action, &referenced_files);
+                if !taint_decision.allowed {
+                    taint_decision
+                } else {
+                    net_decision
+                }
+            }
+        } else {
+            self.taint_engine.evaluate_policy(action, &referenced_files)
+        };
 
         if !decision.allowed {
             self.log_event(

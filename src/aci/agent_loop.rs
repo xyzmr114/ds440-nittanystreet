@@ -1,5 +1,6 @@
-﻿use crate::aci::ACIHarness;
+use crate::aci::ACIHarness;
 use crate::models::ToolResult;
+use crate::walls::promptinject::PromptInjectScanner;
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -177,7 +178,38 @@ impl AgentLoop {
                         tool_name: None,
                     });
 
+                    // Scan tool arguments for injection patterns
+                    let scanner = PromptInjectScanner::new();
+                    let args_str = arguments.to_string();
+                    let arg_findings = scanner.scan(&args_str);
+                    if !arg_findings.is_empty() {
+                        let warning = format!(
+                            "[PromptInjectScanner] {} injection pattern(s) detected in tool arguments for '{}': {:?}",
+                            arg_findings.len(), name, arg_findings
+                        );
+                        history.push(AgentMessage {
+                            role: AgentRole::Tool,
+                            content: warning,
+                            tool_name: Some("promptinject_scanner".to_string()),
+                        });
+                    }
+
                     let tool_result = execute_tool(harness, &name, &arguments);
+
+                    // Scan tool output for injection patterns
+                    let output_str_for_scan = tool_result.output.to_string();
+                    let output_findings = scanner.scan(&output_str_for_scan);
+                    if !output_findings.is_empty() {
+                        let warning = format!(
+                            "[PromptInjectScanner] {} injection pattern(s) detected in '{}' output: {:?}",
+                            output_findings.len(), name, output_findings
+                        );
+                        history.push(AgentMessage {
+                            role: AgentRole::Tool,
+                            content: warning,
+                            tool_name: Some("promptinject_scanner".to_string()),
+                        });
+                    }
 
                     if tool_result.status == "BLOCKED_BY_POLICY"
                         || tool_result

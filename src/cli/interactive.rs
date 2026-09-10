@@ -95,9 +95,20 @@ impl InteractiveHarness {
                         println!("[+] Spun up fresh isolated virtual sandbox: {}", root.display());
                     }
                     "/rewind" => {
-                        println!("[*] Rolling back sandbox to last clean state...");
-                        let _ = self.harness.snapshot("checkpoint");
-                        println!("[+] Snapshot state restored.");
+                        println!("[*] Rolling back sandbox to last snapshot...");
+                        let snapshot_ids: Vec<String> = self.harness.snapshots.keys().cloned().collect();
+                        if let Some(last_snap_id) = snapshot_ids.last() {
+                            match self.harness.rewind(last_snap_id) {
+                                Ok(_) => println!("[+] Sandbox state rewound to snapshot '{}'.", last_snap_id),
+                                Err(e) => println!("[-] Rewind failed: {}", e),
+                            }
+                        } else {
+                            // No snapshots exist yet — create one as a baseline then tell the user
+                            match self.harness.snapshot("baseline") {
+                                Ok(snap) => println!("[+] No prior snapshot found. Created baseline snapshot '{}'. Run /rewind again to restore to this point.", snap.snapshot_id),
+                                Err(e) => println!("[-] Could not create baseline snapshot: {}", e),
+                            }
+                        }
                     }
                     "/attack" => {
                         let arg = parts.get(1).copied().unwrap_or("m365");
@@ -308,6 +319,17 @@ impl LlmDriver for InteractiveHttpDriver {
 
         match res {
             Ok(val) => {
+                // First try native tool_calls (OpenAI function calling format)
+                if let Some(tool_calls) = val["choices"][0]["message"]["tool_calls"].as_array() {
+                    if let Some(tc) = tool_calls.first() {
+                        let name = tc["function"]["name"].as_str().unwrap_or("unknown").to_string();
+                        let args_str = tc["function"]["arguments"].as_str().unwrap_or("{}");
+                        let arguments: serde_json::Value = serde_json::from_str(args_str).unwrap_or(serde_json::json!({}));
+                        println!("  \x1b[36m┌─ Tool Call (native):\x1b[0m \x1b[1m{}\x1b[0m({})", name, arguments);
+                        return Ok(AgentStepAction::CallTool { name, arguments });
+                    }
+                }
+                // Fall back to content-based parsing
                 if let Some(content) = val["choices"][0]["message"]["content"].as_str() {
                     if let Some(tool_call) = crate::aci::agent_loop::parse_tool_call(content) {
                         println!("  \x1b[36m┌─ Tool Call:\x1b[0m \x1b[1m{}\x1b[0m({})", tool_call.name, tool_call.arguments);

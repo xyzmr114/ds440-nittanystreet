@@ -261,6 +261,16 @@ async fn run_harness_task(
 
             match res {
                 Ok(val) => {
+                    // First try native tool_calls (OpenAI function calling format)
+                    if let Some(tool_calls) = val["choices"][0]["message"]["tool_calls"].as_array() {
+                        if let Some(tc) = tool_calls.first() {
+                            let name = tc["function"]["name"].as_str().unwrap_or("unknown").to_string();
+                            let args_str = tc["function"]["arguments"].as_str().unwrap_or("{}");
+                            let arguments: serde_json::Value = serde_json::from_str(args_str).unwrap_or(serde_json::json!({}));
+                            return Ok(AgentStepAction::CallTool { name, arguments });
+                        }
+                    }
+                    // Fall back to content-based parsing
                     if let Some(content) = val["choices"][0]["message"]["content"].as_str() {
                         if let Some(tool_call) = parse_tool_call(content) {
                             Ok(AgentStepAction::CallTool {

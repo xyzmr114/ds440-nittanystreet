@@ -39,11 +39,33 @@ impl LocalIsolatedRuntime {
             return Err(anyhow::anyhow!("Absolute paths not allowed in sandbox: {}", rel_path));
         }
         let resolved = self.root_path.join(cleaned);
-        // Ensure path stays within root
-        if !resolved.starts_with(&self.root_path) {
+
+        let mut current = resolved.as_path();
+        let mut to_append = Vec::new();
+        let canonical_resolved = loop {
+            if let Ok(canon) = fs::canonicalize(current) {
+                let mut full = canon;
+                for comp in to_append.into_iter().rev() {
+                    full.push(comp);
+                }
+                break full;
+            }
+            if let Some(parent) = current.parent() {
+                if let Some(file_name) = current.file_name() {
+                    to_append.push(file_name.to_owned());
+                }
+                current = parent;
+            } else {
+                return Err(anyhow::anyhow!("Invalid path: {}", rel_path));
+            }
+        };
+
+        let canon_root = fs::canonicalize(&self.root_path)?;
+        if !canonical_resolved.starts_with(&canon_root) {
             return Err(anyhow::anyhow!("Path escape detected: {}", rel_path));
         }
-        Ok(resolved)
+        
+        Ok(canonical_resolved)
     }
 
     fn collect_files_recursive(&self, dir: &Path, rel_prefix: &str, files: &mut Vec<String>) {
@@ -146,10 +168,16 @@ impl SandboxRuntime for LocalIsolatedRuntime {
             return Err(anyhow::anyhow!("Snapshot not found: {}", snapshot_id));
         }
 
-        // Clean current files (except snapshots directory)
+        // Destructive rewind safety guard
+        let marker = self.root_path.join(".taintbox_sandbox");
+        if !marker.exists() {
+            return Err(anyhow::anyhow!("Destructive rewind refused: root path is not a sandbox created by ACIHarness (missing .taintbox_sandbox)"));
+        }
+
+        // Clean current files (except snapshots directory and marker)
         for entry in fs::read_dir(&self.root_path)?.flatten() {
             let path = entry.path();
-            if path == self.snapshots_dir {
+            if path == self.snapshots_dir || path == marker {
                 continue;
             }
             if path.is_dir() {

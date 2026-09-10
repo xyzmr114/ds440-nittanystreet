@@ -71,3 +71,20 @@ fn test_snapshot_and_rewind() {
     assert_eq!(harness.runtime.read_file("clean.txt").unwrap(), "initial state");
     assert!(!harness.taint_engine.is_tainted("derived.txt"));
 }
+
+#[test]
+fn test_path_traversal_escape() {
+    let mut harness = ACIHarness::new_with_temp_dir().unwrap();
+
+    // Trying to read a file outside the sandbox (e.g., using ../)
+    let read_res = harness.read("../Cargo.toml");
+    assert_eq!(read_res.status, "ERROR");
+    let err = read_res.error.as_ref().unwrap();
+    assert!(err.contains("Path escape detected") || err.contains("Invalid path"));
+
+    // Trying to write outside the sandbox
+    let write_res = harness.write("../hacked.txt", "pwned", None);
+    assert_eq!(write_res.status, "ERROR");
+    let err_w = write_res.error.as_ref().unwrap();
+    assert!(err_w.contains("Path escape detected") || err_w.contains("Invalid path"));
+}
