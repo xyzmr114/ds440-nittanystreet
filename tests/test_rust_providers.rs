@@ -43,3 +43,26 @@ fn test_provider_manager_defaults_and_updates() {
     assert_eq!(frontier_updated.frontier.api_key.unwrap(), "ant_key_xyz");
     assert_eq!(frontier_updated.frontier.model, "claude-3-5-sonnet");
 }
+
+#[test]
+fn test_models_dev_catalog_lookup() {
+    use taintbox::config::models_dev::ModelCatalog;
+
+    let ollama_models = ModelCatalog::get_models_for_provider("ollama");
+    assert!(!ollama_models.is_empty());
+    assert!(ollama_models.iter().any(|m| m.id.contains("qwen2.5-coder")));
+
+    let openai_models = ModelCatalog::get_models_for_provider("openai");
+    assert!(!openai_models.is_empty());
+    assert!(openai_models.iter().any(|m| m.id == "gpt-4o"));
+
+    let anthropic_models = ModelCatalog::get_models_for_provider("anthropic");
+    assert!(!anthropic_models.is_empty());
+    assert!(anthropic_models.iter().any(|m| m.id.contains("claude-3-7-sonnet") || m.id.contains("claude-3-5-sonnet")));
+
+    let found = ModelCatalog::find_model("gpt-4o");
+    assert!(found.is_some());
+    let spec = found.unwrap();
+    assert_eq!(spec.context_window, 128_000);
+    assert_eq!(spec.tool_format, "native_json");
+}

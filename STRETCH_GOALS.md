@@ -111,10 +111,103 @@ pub struct ModelSpec {
 
 ---
 
-## 5. Development Milestones
+## 5. Lightweight Embedded Session DB & Mid-Session Model Switching
+
+A critical requirement for enterprise developer workflows is **zero context loss across model switches**. When an operator switches from a local offline model (e.g. `qwen2.5-coder`) to a frontier reasoning model (e.g. `claude-3.7-sonnet` or `o3-mini`) mid-turn, the full working memory, variable provenance, active diffs, and tool execution state must remain intact.
+
+### A. Dual-Tier Hot/Cold Memory System
+
+```text
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                       SESSION MEMORY ARCHITECTURE                           │
+├─────────────────────────────────────────────────────────────────────────────┤
+│  [ HOT MEMORY ]  Lossless Context Manager (LCM)                             │
+│   • Active token window sized dynamically to target ModelSpec               │
+│   • Live System Prompt + Recent Turn History (Sliding Working Window)       │
+│   • Head/Tail Output Windowing on tool stdout/stderr                        │
+├─────────────────────────────────────┬───────────────────────────────────────┤
+│                                     │ (Automatic Spillover / Compaction)   │
+│                                     ▼                                       │
+│  [ COLD MEMORY ] 2-Phase Directed Acyclic Graph (DAG)                      │
+│   • Vertex: Immutable Turn State (UserPrompt, ToolCall, Observation, Diff)   │
+│   • Edge: Causal Provenance Transition + Token Delta                       │
+│   • Branching: Multiple alternative solution paths from any checkpoint      │
+│   • Rollback: O(1) pointer relocation to ancestor DAG node                  │
+├─────────────────────────────────────┴───────────────────────────────────────┤
+│  [ STORAGE BACKEND ] Embedded Pure-Rust Engine (redb / SQLite / sled)       │
+│   • Zero external daemon dependency (runs in-process)                       │
+│   • Serializes turn snapshots, provenance bitmasks, and filesystem diffs    │
+│   • Enables session resume across restarts: `tbox resume <session_id>`      │
+└─────────────────────────────────────────────────────────────────────────────┘
+```
+
+### B. Hot/Cold Memory Implementation Principles:
+1. **Lossless Context Management (LCM)**:
+   - Compaction retains essential AST symbols, modified file summaries, and error traces while folding repetitive terminal logs.
+   - Preserves exact byte hashes of created artifacts so model transitions don't invalidate filesystem tracking.
+2. **2-Phase DAG State Machine**:
+   - **Phase 1 (Speculative Expansion)**: Agent explores tool calls, branches speculative edits, tests unit tests.
+   - **Phase 2 (Commit / Declassify)**: On passing tests or user verification, the branch is merged into the mainline DAG and provenance ledger.
+
+---
+
+## 6. Query & Intent Classification Engine (Paper 2 Defense-in-Depth)
+
+To safeguard agent tools against sophisticated indirect injections, TaintBox investigates automated **query and payload intent classification** to complement heuristic boundary rules.
+
+### Classification Architecture Comparison
+
+| Model Family | Inference Latency | Memory Footprint | Runtime Dependency | Detection Capabilities |
+|---|---|---|---|---|
+| **Tier 0: Regex & Heuristics** | `< 0.05 ms` | Negligible (`< 1 MB`) | Pure Rust | Instruction overrides, delimiter escapes, common exfiltration patterns |
+| **Tier 1: TF-IDF + Random Forest** | `< 0.8 ms` | `~ 5 MB` | `smartcore` / pure Rust | Bag-of-words token distribution shifts, role confusion, multi-turn drift |
+| **Tier 2: DistilBERT / ModernBERT ONNX** | `~ 8–15 ms` | `~ 65 MB` | `ort` (ONNX Runtime) | Semantic obfuscation, encoded payloads, indirect social engineering attacks |
+
+### The 2-Phase Cascaded Pipeline:
+1. **Fast Filter (Tier 0)**: 95% of normal coding queries pass through instantly with zero noticeable latency.
+2. **Feature Extractor & Random Forest (Tier 1)**: Computes Shannon entropy, token frequency anomalies, and sensitive keyword density. Flagged inputs are quarantined.
+3. **Deep Semantic Verifier (Tier 2)**: For borderline inputs (e.g. compliance memos, external customer emails), a lightweight local ONNX transformer scores the injection probability before content is passed to the agent.
+
+---
+
+## 7. Dual Research Papers Formulation (Penn State DS 440)
+
+### Paper 1: Agent-Computer Interface (ACI) & Capability Scaling
+* **Title**: *Evaluating Tool Ergonomics and Context Compression in Autonomous AI Software Engineering*
+* **Core Hypothesis**: Replacing unstructured raw bash shell access with a typed, windowed ACI (`view_lines`, `edit_block`, `search_files`, `snapshot`/`rewind`) improves SWE-bench task completion by `> 30%` while cutting token expenditure by `> 40%`.
+* **Lead Author**: Harsh Rathi (supported by Saathvik Sharma & Ammar Al-Sabti).
+* **Datasets**: SWE-bench Lite, Terminal-Bench, HumanEval-Rust.
+
+### Paper 2: Data-Level Taint Tracking & Boundary Containment
+* **Title**: *Provable Containment of Indirect Prompt Injections via Bitmask Taint Ledgers and Sandbox Boundary Enforcement*
+* **Core Hypothesis**: Fine-grained data provenance propagation prevents credential exfiltration and unauthorized workspace modifications from untrusted web feeds with `0%` false positives on standard developer tasks.
+* **Lead Author**: Akshat Singhal (supported by Harsh Rathi & Aryamaan Dhuwalia).
+* **Datasets**: AgentDojo, InjecAgent, BIPIA, M365 Indirect Attack Corpus.
+
+---
+
+## 8. Multi-Platform MicroVM & OS Virtualization
+
+* **macOS (Apple Silicon M-Series)**:
+  * Hypervisor: Apple `Virtualization.framework` via `libkrun` / `vfkit`.
+  * Boot Time: `< 120 ms`.
+  * RAM: Ephemeral 128MB micro-container per agent session.
+* **Linux (Bare-Metal / Cloud)**:
+  * Hypervisor: KVM (`/dev/kvm`) + Firecracker / Cloud-Hypervisor.
+  * Boot Time: `< 50 ms`.
+  * Storage: Read-only SquashFS base rootfs + memory-backed `overlayfs`.
+* **Windows 11**:
+  * Approach 1: WSL2 with Nested KVM (`.wslconfig: nestedVirtualization=true`).
+  * Approach 2: Windows Sandbox (`runhcs`) for native Windows binaries and PowerShell scripts.
+
+---
+
+## 9. Development Milestones
 
 | Milestone | Phase | Focus |
 |---|---|---|
-| **Phase 1** (Current) | Capstone Core | Pure Rust runtime, LocalIsolatedRuntime, SWE-agent ACI, Taint Ledger, Overkill Walls, TUI, Tauri GUI |
-| **Phase 2** (Sprint 1) | Mid-Capstone | gVisor (`runsc`) user-space sandbox driver, Spider Cloud live scraper, Synthetic Attack Generator (Akshat) |
-| **Phase 3** (Post-Cap) | Commercial Infra | Firecracker / KVM MicroVM driver, WSL2 nested virtualization bridge, `models.dev` dynamic client |
+| **Phase 1** (Completed) | Capstone Core | Pure Rust runtime, LocalIsolatedRuntime, SWE-agent ACI, Taint Ledger, PromptInjectScanner, OpenCode-grade Zen TUI |
+| **Phase 2** (Current Sprint) | Mid-Capstone | `/init` repo indexing, dynamic `models.dev` catalog client, M365 authentic attack corpus loader, live `fetch()` egress gate |
+| **Phase 3** (Sprint 2) | Architecture Expansion | Lightweight embedded session DB (redb/SQLite), 2-Phase DAG hot/cold memory, Random Forest query classifier |
+| **Phase 4** (Commercial Post-Cap) | Hardware Virtualization | Firecracker/KVM microVM driver, macOS Apple Silicon `Virtualization.framework`, Windows WSL2 KVM bridge |
+

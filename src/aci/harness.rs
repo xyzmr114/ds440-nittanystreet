@@ -1,5 +1,6 @@
 use std::collections::HashMap;
 use std::path::Path;
+use sha2::{Digest, Sha256};
 use uuid::Uuid;
 
 use crate::models::{
@@ -408,12 +409,63 @@ impl ACIHarness {
 
     pub fn fetch(&mut self, url: &str, save_as: Option<&str>, mock_content: Option<&str>) -> ToolResult {
         let call_id = Uuid::new_v4().to_string();
+
+        // Enforce network egress policy
+        let decision = self.taint_engine.evaluate_network_egress(url, &[]);
+        if !decision.allowed {
+            self.log_event("POLICY_BLOCK", "fetch", serde_json::json!({ "url": url, "reason": decision.reason }));
+            return ToolResult {
+                call_id,
+                tool_name: "fetch".to_string(),
+                status: "BLOCKED_BY_POLICY".to_string(),
+                output: serde_json::Value::Null,
+                error: Some(format!("Policy violation: {}", decision.reason)),
+                provenance: None,
+                policy_decision: Some(decision),
+            };
+        }
+
         let target_path = save_as.map(|s| s.to_string()).unwrap_or_else(|| {
             format!("downloads/{}.txt", Uuid::new_v4().simple())
         });
-        let payload = mock_content.unwrap_or("Simulated untrusted content");
 
-        if let Err(e) = self.runtime.write_file(&target_path, payload) {
+        let payload = if let Some(mock) = mock_content {
+            mock.to_string()
+        } else {
+            // Attempt real HTTP GET via reqwest
+            let client = reqwest::Client::builder()
+                .timeout(std::time::Duration::from_secs(5))
+                .build()
+                .unwrap_or_default();
+            let fetch_res: Result<String, String> = if let Ok(rt) = tokio::runtime::Handle::try_current() {
+                tokio::task::block_in_place(|| {
+                    rt.block_on(async {
+                        match client.get(url).send().await {
+                            Ok(resp) => resp.text().await.map_err(|e| e.to_string()),
+                            Err(e) => Err(e.to_string()),
+                        }
+                    })
+                })
+            } else if let Ok(rt) = tokio::runtime::Runtime::new() {
+                rt.block_on(async {
+                    match client.get(url).send().await {
+                        Ok(resp) => resp.text().await.map_err(|e| e.to_string()),
+                        Err(e) => Err(e.to_string()),
+                    }
+                })
+            } else {
+                Err("Runtime unavailable".to_string())
+            };
+
+            match fetch_res {
+                Ok(text) => text,
+                Err(e) => {
+                    format!("<!-- [TaintBox Web Fetch] Offline simulated content for {} ({}) -->\nUntrusted web payload for evaluation.", url, e)
+                }
+            }
+        };
+
+        if let Err(e) = self.runtime.write_file(&target_path, &payload) {
             return ToolResult {
                 call_id,
                 tool_name: "fetch".to_string(),
@@ -441,10 +493,10 @@ impl ACIHarness {
             call_id,
             tool_name: "fetch".to_string(),
             status: "SUCCESS".to_string(),
-            output: serde_json::Value::String(payload.to_string()),
+            output: serde_json::Value::String(payload),
             error: None,
             provenance: Some(record),
-            policy_decision: None,
+            policy_decision: Some(decision),
         }
     }
 
@@ -634,4 +686,95 @@ impl ACIHarness {
     pub fn get_audit_events(&self) -> Vec<AuditEvent> {
         self.audit_events.clone()
     }
+
+    pub fn init_workspace(&mut self) -> anyhow::Result<InitSummary> {
+        let scanner = crate::walls::promptinject::PromptInjectScanner::new();
+        let mut warnings = Vec::new();
+        let mut file_records = Vec::new();
+
+        // 1. Check or generate AGENTS.md
+        let agents_md_status = if self.runtime.file_exists("AGENTS.md") {
+            let content = self.runtime.read_file("AGENTS.md").unwrap_or_default();
+            let findings = scanner.scan(&content);
+            if !findings.is_empty() {
+                warnings.push(format!("AGENTS.md contains {} suspicious prompt injection pattern(s)!", findings.len()));
+                self.taint_engine.record_provenance("AGENTS.md", ProvenanceRecord {
+                    source_id: "AGENTS.md".to_string(),
+                    tag: ProvenanceTag::ExternalFile,
+                    trust_level: TrustLevel::Untrusted,
+                    chain_of_custody: vec!["pre_existing_workspace".to_string()],
+                    timestamp: chrono::Utc::now().timestamp_millis() as f64 / 1000.0,
+                    metadata: serde_json::json!({ "scanner_tripped": true, "findings": findings }),
+                });
+                "Pre-existing [WARNING: Untrusted Injection Patterns Detected]".to_string()
+            } else {
+                "Pre-existing [Verified Clean]".to_string()
+            }
+        } else {
+            let template = "# AGENTS.md - TaintBox Autonomous Agent Workspace\n\n\
+                ## Core Rules & Guardrails\n\
+                1. Always inspect files and verify dependencies before modifications.\n\
+                2. Untrusted external files and web fetches are quarantined in the Taint Ledger.\n\
+                3. Unauthorized network egress is strictly prohibited by BoundaryPolicyEngine.\n\n\
+                ## Permitted Tools\n\
+                `read`, `write`, `edit_block`, `view_lines`, `search_files`, `grep`, `fetch`, `exec`, `snapshot`, `rewind`, `observe`\n";
+            self.runtime.write_file("AGENTS.md", template)?;
+            "Generated clean AGENTS.md template".to_string()
+        };
+
+        // 2. Walk directory and index all files
+        let all_files = self.runtime.list_files();
+        for file in &all_files {
+            if file == "AGENTS.md" && agents_md_status.contains("Pre-existing") {
+                let is_untrusted = self.taint_engine.is_tainted(file);
+                file_records.push((file.clone(), "sha256:pre_existing".to_string(), is_untrusted));
+                continue;
+            }
+
+            let content = self.runtime.read_file(file).unwrap_or_default();
+            let hash = hex::encode(Sha256::digest(content.as_bytes()));
+            let findings = scanner.scan(&content);
+
+            let is_untrusted = if !findings.is_empty() {
+                warnings.push(format!("File '{}' flagged: {} suspicious pattern(s)", file, findings.len()));
+                true
+            } else {
+                false
+            };
+
+            let tag = if is_untrusted { ProvenanceTag::ExternalFile } else { ProvenanceTag::Internal };
+            let trust_level = if is_untrusted { TrustLevel::Untrusted } else { TrustLevel::Internal };
+
+            if !self.taint_engine.is_tainted(file) {
+                self.taint_engine.record_provenance(file, ProvenanceRecord {
+                    source_id: file.clone(),
+                    tag,
+                    trust_level,
+                    chain_of_custody: vec!["workspace_init".to_string()],
+                    timestamp: chrono::Utc::now().timestamp_millis() as f64 / 1000.0,
+                    metadata: serde_json::json!({ "sha256": hash, "findings_count": findings.len() }),
+                });
+            }
+
+            file_records.push((file.clone(), hash, is_untrusted));
+        }
+
+        // 3. Create baseline snapshot
+        let _ = self.snapshot("workspace_init_baseline");
+
+        Ok(InitSummary {
+            total_files_indexed: all_files.len(),
+            agents_md_status,
+            warnings,
+            file_records,
+        })
+    }
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct InitSummary {
+    pub total_files_indexed: usize,
+    pub agents_md_status: String,
+    pub warnings: Vec<String>,
+    pub file_records: Vec<(String, String, bool)>,
 }

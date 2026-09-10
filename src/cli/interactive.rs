@@ -110,6 +110,25 @@ impl InteractiveHarness {
                             }
                         }
                     }
+                    "/init" => {
+                        println!("\n[*] Initializing workspace repository scan...");
+                        match self.harness.init_workspace() {
+                            Ok(summary) => {
+                                println!("[+] AGENTS.md Status : {}", summary.agents_md_status);
+                                println!("[+] Files Indexed    : {}", summary.total_files_indexed);
+                                if !summary.warnings.is_empty() {
+                                    println!("\x1b[31;1m[!] Security Alerts ({}):\x1b[0m", summary.warnings.len());
+                                    for w in &summary.warnings {
+                                        println!("    \x1b[31m• {}\x1b[0m", w);
+                                    }
+                                } else {
+                                    println!("[+] Clean Baseline   : Zero security violations detected.");
+                                }
+                                println!("[+] Created snapshot : 'workspace_init_baseline'");
+                            }
+                            Err(e) => println!("[-] Workspace initialization error: {}", e),
+                        }
+                    }
                     "/attack" => {
                         let arg = parts.get(1).copied().unwrap_or("m365");
                         self.run_attack_simulation(arg).await;
@@ -136,6 +155,7 @@ impl InteractiveHarness {
     fn print_help(&self) {
         println!("\nAvailable tbox commands:");
         println!("  /help              Show this help reference");
+        println!("  /init              Analyze repository, index files, check/create AGENTS.md, surface taint");
         println!("  /setup             Reconfigure LLM provider, API credentials, or model");
         println!("  /sandbox           Inspect files and active status of the virtual sandbox");
         println!("  /taint             Display the live taint ledger and data provenance");

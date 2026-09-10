@@ -101,13 +101,13 @@ pub fn run_setup_wizard() -> anyhow::Result<UserConfig> {
     io::stdin().read_line(&mut choice)?;
     let choice = choice.trim();
 
-    let (provider, default_url, default_model, needs_key) = match choice {
-        "2" => ("openai", "https://api.openai.com/v1", "gpt-4o", true),
-        "3" => ("openrouter", "https://openrouter.ai/api/v1", "anthropic/claude-3.5-sonnet", true),
-        "4" => ("deepseek", "https://api.deepseek.com/v1", "deepseek-chat", true),
-        "5" => ("anthropic", "https://api.anthropic.com/v1", "claude-3-5-sonnet-20241022", true),
-        "6" => ("custom", "http://localhost:8080/v1", "custom-model", false),
-        _ => ("ollama", "http://localhost:11434/v1", "qwen2.5-coder", false),
+    let (provider, default_url, needs_key) = match choice {
+        "2" => ("openai", "https://api.openai.com/v1", true),
+        "3" => ("openrouter", "https://openrouter.ai/api/v1", true),
+        "4" => ("deepseek", "https://api.deepseek.com/v1", true),
+        "5" => ("anthropic", "https://api.anthropic.com/v1", true),
+        "6" => ("custom", "http://localhost:8080/v1", false),
+        _ => ("ollama", "http://localhost:11434/v1", false),
     };
 
     // API URL
@@ -135,13 +135,36 @@ pub fn run_setup_wizard() -> anyhow::Result<UserConfig> {
         if key_input.is_empty() { None } else { Some(key_input.to_string()) }
     };
 
-    // Model name
-    print!("Model Identifier [{}]: ", default_model);
+    // Dynamic model picker from models.dev catalog
+    let available_models = crate::config::models_dev::ModelCatalog::get_models_for_provider(provider);
+    println!("\nSelect Model from models.dev Catalog for '{}':", provider);
+    for (i, m) in available_models.iter().enumerate() {
+        println!("  [{}] {} ({}) [ctx: {}k]", i + 1, m.name, m.id, m.context_window / 1000);
+    }
+    println!("  [0] Custom / unlisted model name");
+    print!("\nChoice [0-{}] (default: 1): ", available_models.len());
     io::stdout().flush()?;
-    let mut model_input = String::new();
-    io::stdin().read_line(&mut model_input)?;
-    let model_input = model_input.trim();
-    let model = if model_input.is_empty() { default_model.to_string() } else { model_input.to_string() };
+
+    let mut model_choice = String::new();
+    io::stdin().read_line(&mut model_choice)?;
+    let model_choice = model_choice.trim();
+
+    let model = if model_choice == "0" {
+        print!("Enter custom model identifier: ");
+        io::stdout().flush()?;
+        let mut custom_model = String::new();
+        io::stdin().read_line(&mut custom_model)?;
+        let trimmed = custom_model.trim();
+        if trimmed.is_empty() { available_models[0].id.clone() } else { trimmed.to_string() }
+    } else if let Ok(idx) = model_choice.parse::<usize>() {
+        if idx >= 1 && idx <= available_models.len() {
+            available_models[idx - 1].id.clone()
+        } else {
+            available_models[0].id.clone()
+        }
+    } else {
+        available_models[0].id.clone()
+    };
 
     // Policy profile
     println!("\nSelect Boundary Policy Enforcement Profile:");

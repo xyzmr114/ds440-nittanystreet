@@ -21,18 +21,18 @@
 
 ## Sprint 1 Task Assignments (Due: Sept 16, 2026)
 
-### 1. Akshat Singhal — Synthetic Attack Corpus Generator (Paper 2)
-* **Goal**: Build the autonomous adversarial injection dataset generator pipeline in Rust/Ollama.
-* **Component**: `src/bunker/` and CLI subcommand `taintbox attackgen`.
+### 1. Akshat Singhal — Synthetic Attack Corpus & Query Classifier (Paper 2)
+* **Goal**: Build the autonomous adversarial injection dataset generator and train a lightweight runtime query classifier.
+* **Component**: `src/bunker/` and `src/walls/classifier.rs`.
 * **Details**:
-  * Connect to the local Ollama Bunker instance (`http://localhost:11434`) running `qwen2.5-coder` or `deepseek-r1`.
-  * Implement prompts generating test cases across the 4 attack families identified in the proposal:
-    1. **Direct Injections**: System instruction overrides, jailbreaks, and delimiter escapes.
-    2. **Indirect Injections**: Injections disguised inside web pages, Markdown documentation, and simulated third-party API payloads.
-    3. **Multi-Turn Shifts**: Progressive goal drift attacks spanning 3–5 turns.
-    4. **Tool Poisoning**: Injected instructions embedded in tool outputs (e.g. `git log` or `grep` results containing malicious `<tool_call>` tags).
+  * Connect to local Ollama Bunker instance (`http://localhost:11434`) running `qwen2.5-coder` or `deepseek-r1`.
+  * Implement prompts generating test cases across the 4 attack families (Direct, Indirect, Multi-Turn, Tool Poisoning).
+  * **Query / Intent Classification**:
+    * Design Tier 1 classifier: TF-IDF feature extraction + Random Forest (sub-millisecond CPU inference via pure Rust / `smartcore`).
+    * Benchmark against Tier 2 ONNX transformer (DistilBERT / ModernBERT via `ort`).
+    * Classify incoming tool inputs and user prompts for injection intent before execution.
   * Format output into standardized JSON benchmark scenarios in `data/injections/corpus_v1.json`.
-* **Deliverable**: Working `taintbox attackgen --family indirect --count 50` command with 100+ generated attack cases.
+* **Deliverable**: Working `taintbox attackgen` command with 100+ generated attack cases and trained Random Forest model artifact.
 
 ---
 
@@ -52,42 +52,49 @@
 
 ---
 
-### 3. Ammar Al-Sabti — Sandbox Virtualization Tiers & MicroVM Stretch Goal
+### 3. Ammar Al-Sabti — Sandbox Virtualization Tiers & Cross-Platform MicroVMs
 * **Goal**: Expand execution isolation beyond the portable `LocalIsolatedRuntime`.
-* **Component**: `src/runtime/gvisor.rs` and `src/runtime/mod.rs`.
-* **Architecture Clarification**:
-  * *Why raw Docker/Podman is insufficient for untrusted code*: Standard containers share the host Linux kernel. In adversarial settings, container escape vulnerabilities via `/proc`, `/sys`, or kernel flaws are unacceptable.
-  * *Two-Tier Isolation Strategy*:
-    * **Tier 1 (Host/Daemon)**: `taintboxd` and PostgreSQL can run in standard containers or host OS.
-    * **Tier 2 (Agent Sandbox)**: The workspace where the agent runs arbitrary code requires virtualization.
-  * Implement `gVisorRuntime` using Google gVisor (`runsc` user-space kernel) implementing the `SandboxRuntime` trait.
-  * *(Stretch)*: Explore lightweight MicroVM drivers (Firecracker or Cloud-Hypervisor) for complete hardware virtualization.
-* **Deliverable**: Working `gVisorRuntime` implementation in `src/runtime/gvisor.rs` with integration tests.
+* **Component**: `src/runtime/gvisor.rs`, `src/runtime/microvm.rs`, and `src/runtime/mod.rs`.
+* **Details**:
+  * **Two-Tier Isolation Strategy**:
+    * **Tier 1 (Host/Daemon)**: `taintboxd` and session persistence.
+    * **Tier 2 (Agent Sandbox)**: The workspace where the agent executes arbitrary code.
+  * Implement `gVisorRuntime` using Google gVisor (`runsc` user-space kernel).
+  * **Cross-Platform MicroVM Exploration**:
+    * Linux: KVM (`/dev/kvm`) + Firecracker / Cloud-Hypervisor.
+    * macOS: Apple Silicon `Virtualization.framework` (`libkrun` / `vfkit`).
+    * Windows: WSL2 nested KVM (`.wslconfig`) and Hyper-V Windows Sandbox (`runhcs`).
+* **Deliverable**: Working `gVisorRuntime` in `src/runtime/gvisor.rs` and architectural prototype for hardware microVM backends.
 
 ---
 
-### 4. Aryamaan Dhuwalia — GitHub Actions CI/CD & Progress Report 1
-* **Goal**: Establish continuous integration and formal course reporting.
-* **Component**: `.github/workflows/ci.yml` and course documentation.
+### 4. Aryamaan Dhuwalia — Embedded Session DB, CI/CD & Progress Report 1
+* **Goal**: Implement lightweight session persistence and establish continuous integration.
+* **Component**: `src/store/session_db.rs`, `.github/workflows/ci.yml`, and course documentation.
 * **Details**:
-  * Set up GitHub Actions workflow executing:
-    * `cargo test --all-targets` (verifying all 48+ tests pass).
-    * `cargo clippy -- -D warnings` (linting).
-    * `cargo fmt --check` (formatting).
-  * Coordinate the sprint Kanban board and compile draft for **Progress Report 1** (Literature review, system architecture, and completed Rust foundation).
-* **Deliverable**: Automated green CI build on `harsh-dev` and Progress Report 1 draft.
+  * **Lightweight Embedded Session Database**:
+    * Pure-Rust in-process storage (`redb` or embedded SQLite) so context is never lost when switching models mid-turn.
+    * Dual-tier Hot/Cold Memory: Hot LCM (Lossless Context Manager) + Cold 2-Phase DAG state machine.
+  * Set up GitHub Actions CI workflow executing `cargo test --all-targets` and `cargo clippy`.
+  * Compile draft for **Progress Report 1** (Literature review, system architecture, and completed Rust foundation).
+* **Deliverable**: Embedded session DB module and automated green CI build on `harsh-dev`.
 
 ---
 
-### 5. Harsh Rathi — Spider Cloud Scraper Integration & Lead Author
-* **Goal**: Wire Spider Cloud's scraping engine into the live agent tool suite and lead Paper 1.
-* **Component**: `src/aci/scraper.rs` and `ProviderManager`.
-* **Details**:
-  * Connect `spider_scrape(url, depth)` in `ACIHarness` to the Spider Cloud API.
-  * Automatically register scraped pages into the Taint Ledger with `TrustLevel::Untrusted`.
-  * Pass scraped markdown through `PromptInjectScanner` to identify indirect prompt injections embedded in web pages.
-  * Author Paper 1 methodology and ACI capability hypothesis.
-* **Deliverable**: `spider_scrape` tool integrated into harness with automated taint labeling.
+### 5. Harsh Rathi — ACI Engine, models.dev Catalog & Lead Author
+* **Goal**: Finalize OpenCode feature parity, dynamic catalog integration, and lead Paper 1.
+* **Component**: `src/aci/harness.rs`, `src/config/models_dev.rs`, `src/tui/zen.rs`.
+* **Status / Achievements**:
+  * [x] **Path Traversal Escape Patched**: Canonicalization + root prefix enforcement.
+  * [x] **Shell Wrapper Interception**: `bash`/`sh -c` classified as privileged with sub-command scanning.
+  * [x] **Safe Destructive Rewind**: Protected against wiping non-sandbox directories.
+  * [x] **Native Tool Calls Parsing**: OpenAI function calling parsed before content fallback.
+  * [x] **PromptInjectScanner Active**: Wired directly into tool argument and output execution pipeline.
+  * [x] **Real `fetch()` Tool**: Active HTTP GET with domain allowlist egress gate & `UntrustedWeb` provenance.
+  * [x] **Workspace Repository `/init`**: Full directory indexing, `AGENTS.md` verification, baseline hashing.
+  * [x] **Dynamic `models.dev` Catalog**: Mid-session model switching via `/models` without context loss.
+  * [x] **Authentic Attack Corpus**: Dynamic loader for `m365_indirect_attacks.json` in Zen TUI.
+* **Deliverable**: OpenCode-grade production terminal application with 100% test coverage.
 
 ---
 
